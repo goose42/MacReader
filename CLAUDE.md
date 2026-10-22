@@ -24,7 +24,7 @@ A native macOS app (Swift + SwiftUI) that makes reading easier. Users pick a lib
 <UserChosenFolder>/Items/<uuid>/{original.pdf, content.txt, document.json, metadata.json}
 ```
 
-`document.json` (`ReaderDocument`) is the app-owned structure: headings and paragraphs in reading order. The reader and its table of contents render from it; `content.txt` is derived plaintext. The PDF's printed contents page is detected and dropped, and ligature glyphs mis-extracted as capitals ("Dle" for "file") are repaired. Items without `document.json` are rebuilt from `original.pdf` on first open.
+`document.json` (`ReaderDocument`) is the app-owned structure: headings, paragraphs and footnotes in reading order. Each block carries `sentences`, UTF-16 ranges the reader steps through (abbreviations like "i.e." and "Dr." don't end a sentence); footnotes are their own blocks placed at the end of their section and are not reading stops. Documents saved without `sentences` fail to decode and are rebuilt from `original.pdf`. The reader and its table of contents render from it; `content.txt` is derived plaintext. The PDF's printed contents page is detected and dropped, and ligature glyphs mis-extracted as capitals ("Dle" for "file") are repaired. Items without `document.json` are rebuilt from `original.pdf` on first open.
 
 ## Commands
 
