@@ -11,6 +11,8 @@ struct TableGrid: Equatable, Sendable {
     let top: CGFloat
     /// The bottom of the row under the last rule, or the last rule when there is none.
     let bottom: CGFloat
+    /// Whether this is the rest of a table that began on the previous page.
+    var continuesPrevious = false
 
     var hasHeader: Bool { top > rules[0] }
 
@@ -49,6 +51,26 @@ enum TableDetector {
     private struct Level {
         var y: CGFloat
         var segments: [ClosedRange<CGFloat>]
+    }
+
+    /// A table that reaches the foot of one page and a matching table at the head of the next are one table.
+    private static let pageEdgeFraction: CGFloat = 0.2
+
+    /// The tables of every page, with those that carry on from the page before marked as continuations.
+    static func tables(inPages pages: [PageGraphics], lines: [TextLine]) -> [TableGrid] {
+        var all: [TableGrid] = []
+        for page in pages {
+            var grids = tables(in: page, lines: lines)
+            if let first = grids.first, let previous = all.last(where: { $0.pageIndex == page.pageIndex - 1 }),
+               let previousPage = pages.first(where: { $0.pageIndex == previous.pageIndex }),
+               previous.bottom < previousPage.size.height * pageEdgeFraction,
+               first.top > page.size.height * (1 - pageEdgeFraction),
+               previous.columns.count == first.columns.count, zip(previous.columns, first.columns).allSatisfy(isSame) {
+                grids[0].continuesPrevious = true
+            }
+            all += grids
+        }
+        return all
     }
 
     static func tables(in graphics: PageGraphics, lines: [TextLine]) -> [TableGrid] {

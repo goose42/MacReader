@@ -260,4 +260,60 @@ struct StructureBuilderTests {
         #expect(doc.blocks.map(\.kind) == [.callout])
         #expect(doc.blocks.first?.text == "42")
     }
+
+    // MARK: - Tables across pages
+
+    private let firstPart = TableGrid(pageIndex: 0, columns: [72...200, 202...400], rules: [500, 450], top: 536, bottom: 40)
+
+    private func secondPart(extraTop: CGFloat = 740) -> TableGrid {
+        TableGrid(pageIndex: 1, columns: [72...200, 202...400], rules: [700, 650], top: extraTop, bottom: 600, continuesPrevious: true)
+    }
+
+    private var firstPartLines: [TextLine] {
+        [
+            at("Module", y: 520, x: 80, width: 60), at("Target", y: 520, x: 220, width: 60),
+            at("Python", y: 470, x: 80, width: 60), at("2 days", y: 470, x: 220, width: 60),
+            at("APIs", y: 420, x: 80, width: 60), at("1.5 days", y: 420, x: 220, width: 60),
+        ]
+    }
+
+    @Test func foldsWrappedTextSpillingOntoTheNextPageIntoTheLastRowsCell() {
+        let lines = firstPartLines + [
+            at("and more", y: 712, page: 1, x: 220, width: 60),
+            at("Ruby", y: 670, page: 1, x: 80, width: 60), at("3 days", y: 670, page: 1, x: 220, width: 60),
+            at("Go", y: 620, page: 1, x: 80, width: 60), at("1 day", y: 620, page: 1, x: 220, width: 60),
+        ]
+        let doc = StructureBuilder.build(lines: lines, fallbackTitle: "T", tables: [firstPart, secondPart()])
+
+        #expect(doc.blocks.map(\.kind) == [.table(.init(
+            rows: [["Module", "Target"], ["Python", "2 days"], ["APIs", "1.5 days and more"], ["Ruby", "3 days"], ["Go", "1 day"]],
+            hasHeader: true))])
+    }
+
+    @Test func dropsAHeaderRepeatedAtTheTopOfTheNextPage() {
+        let lines = firstPartLines + [
+            at("Module", y: 712, page: 1, x: 80, width: 60), at("Target", y: 712, page: 1, x: 220, width: 60),
+            at("Ruby", y: 670, page: 1, x: 80, width: 60), at("3 days", y: 670, page: 1, x: 220, width: 60),
+        ]
+        let doc = StructureBuilder.build(lines: lines, fallbackTitle: "T", tables: [firstPart, secondPart()])
+        guard case .table(let table)? = doc.blocks.first?.kind else {
+            Issue.record("no table")
+            return
+        }
+        #expect(table.rows.map { $0[0] } == ["Module", "Python", "APIs", "Ruby"])
+    }
+
+    @Test func appendsAFullRowAtTheTopOfTheNextPageAsARow() {
+        let lines = firstPartLines + [
+            at("Perl", y: 712, page: 1, x: 80, width: 60), at("4 days", y: 712, page: 1, x: 220, width: 60),
+            at("Ruby", y: 670, page: 1, x: 80, width: 60), at("3 days", y: 670, page: 1, x: 220, width: 60),
+        ]
+        let doc = StructureBuilder.build(lines: lines, fallbackTitle: "T", tables: [firstPart, secondPart()])
+        guard case .table(let table)? = doc.blocks.first?.kind else {
+            Issue.record("no table")
+            return
+        }
+        #expect(table.rows.map { $0[0] } == ["Module", "Python", "APIs", "Perl", "Ruby"])
+        #expect(table.hasHeader)
+    }
 }

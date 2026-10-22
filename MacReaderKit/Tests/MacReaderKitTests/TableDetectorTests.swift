@@ -78,4 +78,40 @@ struct TableDetectorTests {
         #expect(grid.rules == [748, 679])
         #expect(grid.columns.last == 481...612)
     }
+
+    // MARK: - Tables that run across pages
+
+    private func page(_ index: Int, rules ys: [CGFloat], lines: [TextLine]) -> (PageGraphics, [TextLine]) {
+        (PageGraphics(pageIndex: index, size: size, rects: rules(at: ys)), lines.map {
+            TextLine(text: $0.text, fontSize: $0.fontSize, pageIndex: index, bounds: $0.bounds)
+        })
+    }
+
+    @Test func marksATableThatStartsAtTheTopOfThePageAfterOneEndingAtTheBottomAsItsContinuation() {
+        let first = page(0, rules: [300, 200, 100], lines: [line("last row", x: 312, y: 60)])
+        let second = page(1, rules: [700, 600], lines: [line("more", x: 312, y: 640)])
+        let grids = TableDetector.tables(inPages: [first.0, second.0], lines: first.1 + second.1)
+
+        #expect(grids.map(\.pageIndex) == [0, 1])
+        #expect(grids.map(\.continuesPrevious) == [false, true])
+    }
+
+    @Test func doesNotJoinTablesWhenThePreviousOneEndsMidPage() {
+        let first = page(0, rules: [700, 600], lines: [])
+        let second = page(1, rules: [700, 600], lines: [])
+        #expect(TableDetector.tables(inPages: [first.0, second.0], lines: []).map(\.continuesPrevious) == [false, false])
+    }
+
+    @Test func doesNotJoinTablesWithDifferentColumns() {
+        let first = page(0, rules: [300, 200, 100], lines: [])
+        let other: [ClosedRange<CGFloat>] = [300...400, 401...605]
+        let second = PageGraphics(pageIndex: 1, size: size, rects: rules(at: [700, 600], columns: other))
+        #expect(TableDetector.tables(inPages: [first.0, second], lines: []).map(\.continuesPrevious) == [false, false])
+    }
+
+    @Test func doesNotJoinTablesOnPagesThatAreNotConsecutive() {
+        let first = page(0, rules: [300, 200, 100], lines: [])
+        let third = page(2, rules: [700, 600], lines: [])
+        #expect(TableDetector.tables(inPages: [first.0, third.0], lines: []).map(\.continuesPrevious) == [false, false])
+    }
 }

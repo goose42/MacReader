@@ -20,7 +20,7 @@ public enum PDFTextExtractor {
         let graphics = PDFGraphicsReader.graphics(in: pdf)
 
         // Table rows arrive as lines spanning several cells, so cut them at the columns before anything reads the text.
-        let tables = graphics.flatMap { TableDetector.tables(in: $0, lines: lines) }
+        let tables = TableDetector.tables(inPages: graphics, lines: lines)
         lines = TableSplitter.split(lines, tables: tables) { characterBounds(of: $0, in: pdf) }
         let repaired = LigatureRepairer(validator: SpellCheckerValidator()).repair(lines.map(\.text))
         lines = zip(lines, repaired).map { TextLine(text: $1, fontSize: $0.fontSize, pageIndex: $0.pageIndex, bounds: $0.bounds) }

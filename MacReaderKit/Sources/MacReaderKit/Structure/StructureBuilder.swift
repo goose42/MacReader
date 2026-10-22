@@ -103,13 +103,23 @@ enum StructureBuilder {
     ) -> (flow: [TextLine], visuals: [Visual]) {
         var visuals: [Visual] = []
         var lines = allLines
+        var lastTable: (visual: Int, table: ReaderDocument.Table)?
         for grid in tables {
             let members = lines.filter { $0.pageIndex == grid.pageIndex && grid.region.contains(CGPoint(x: $0.bounds.midX, y: $0.bounds.midY)) }
-            guard let table = table(for: grid, from: members), let anchor = members.map(\.sequence).min() else { continue }
-            let text = table.rows.map { $0.joined(separator: "\t") }.joined(separator: "\n")
-            visuals.append(Visual(anchor: anchor, kind: .table(table), text: text))
+            let previous = grid.continuesPrevious ? lastTable : nil
+            guard let table = table(for: grid, from: members, isContinuation: previous != nil),
+                  let anchor = members.map(\.sequence).min() else { continue }
             let taken = Set(members.map(\.sequence))
             lines.removeAll { taken.contains($0.sequence) }
+
+            if let previous {
+                let merged = joined(previous.table, continuedBy: table)
+                visuals[previous.visual] = Visual(anchor: visuals[previous.visual].anchor, kind: .table(merged), text: tabSeparated(merged))
+                lastTable = (previous.visual, merged)
+            } else {
+                visuals.append(Visual(anchor: anchor, kind: .table(table), text: tabSeparated(table)))
+                lastTable = (visuals.count - 1, table)
+            }
         }
 
         var members: [[TextLine]] = Array(repeating: [], count: boxes.count)
@@ -266,7 +276,7 @@ enum StructureBuilder {
     }
 
     /// The cells of `grid` filled from the lines that sit in it, or nil if what is there is not really a table.
-    private static func table(for grid: TableGrid, from members: [TextLine]) -> ReaderDocument.Table? {
+    private static func table(for grid: TableGrid, from members: [TextLine], isContinuation: Bool = false) -> ReaderDocument.Table? {
         let edges = grid.rowEdges
         let boundaries = grid.columnBoundaries
         let columnCount = grid.columns.count
@@ -286,8 +296,31 @@ enum StructureBuilder {
         let kept = cells.indices.filter { row in cells[row].contains { !$0.isEmpty } }
         let rows = kept.map { row in cells[row].map(text) }
         let filledColumns = (0..<columnCount).filter { column in rows.contains { !$0[column].isEmpty } }
-        guard rows.count >= 2, filledColumns.count >= 2 else { return nil }
+        // The tail of a table may be a single row, which is only a table in the light of the rows before it.
+        guard rows.count >= (isContinuation ? 1 : 2), filledColumns.count >= (isContinuation ? 1 : 2) else { return nil }
         return ReaderDocument.Table(rows: rows, hasHeader: grid.hasHeader && kept.first == 0)
+    }
+
+    private static func tabSeparated(_ table: ReaderDocument.Table) -> String {
+        table.rows.map { $0.joined(separator: "\t") }.joined(separator: "\n")
+    }
+
+    /// Appends the rows of the next page's part of a table. A part that opens with only some cells filled is the
+    /// end of the last row's wrapped text, and a header repeated at the top of the page is not a row at all.
+    private static func joined(_ table: ReaderDocument.Table, continuedBy next: ReaderDocument.Table) -> ReaderDocument.Table {
+        var rows = table.rows
+        var added = next.rows
+        if next.hasHeader, let top = added.first {
+            if top == table.rows.first {
+                added.removeFirst()
+            } else if top.contains(where: \.isEmpty), !rows.isEmpty {
+                for (column, text) in top.enumerated() where !text.isEmpty {
+                    rows[rows.count - 1][column] += rows[rows.count - 1][column].isEmpty ? text : " " + text
+                }
+                added.removeFirst()
+            }
+        }
+        return ReaderDocument.Table(rows: rows + added, hasHeader: table.hasHeader)
     }
 
     /// Wrapped prose reflows like any paragraph. Anything ragged (code, a table, a list) keeps the PDF's line breaks,
