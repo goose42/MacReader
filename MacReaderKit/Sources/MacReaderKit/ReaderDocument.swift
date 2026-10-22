@@ -5,6 +5,10 @@ public struct ReaderDocument: Codable, Equatable, Sendable {
         public enum Kind: Codable, Equatable, Sendable {
             case heading(level: Int)
             case paragraph
+            /// Text the PDF sets in a box of its own, outside the linear flow.
+            case callout
+            /// A picture or figure, saved as `name` in the item's images folder; its `text` is empty.
+            case image(name: String, aspectRatio: Double)
         }
 
         public let id: Int
@@ -53,7 +57,7 @@ public struct ReaderDocument: Codable, Equatable, Sendable {
     }
 
     /// Bumped when extraction changes what `document.json` holds, so older items are rebuilt from their PDF.
-    public static let currentFormatVersion = 2
+    public static let currentFormatVersion = 3
 
     public var formatVersion: Int
     public var title: String
@@ -91,9 +95,18 @@ public struct ReaderDocument: Codable, Equatable, Sendable {
         return Set(numbered.filter { $0.level == shallowest && $0.id != firstID }.map(\.id))
     }
 
+    /// Names of the image files the document's figures refer to, in reading order.
+    public var imageNames: [String] {
+        blocks.compactMap { block in
+            guard case .image(let name, _) = block.kind else { return nil }
+            return name
+        }
+    }
+
     /// Blocks joined by blank lines, headings prefixed with their numbers; the format written to `content.txt`.
     public var plainText: String {
-        blocks.map { block in
+        blocks.compactMap { block in
+            if case .image = block.kind { return nil }
             guard let numbering = block.numbering else { return block.text }
             return "\(numbering.label) \(block.text)"
         }.joined(separator: "\n\n")
