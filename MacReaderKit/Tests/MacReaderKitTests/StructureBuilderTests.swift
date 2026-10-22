@@ -85,4 +85,95 @@ struct StructureBuilderTests {
         #expect(doc.blocks.map(\.text) == ["Body text on the first page.", "Chapter 2", "Body text on the second page."])
         #expect(doc.tableOfContents == [.init(id: 1, title: "Chapter 2", level: 1)])
     }
+
+    // MARK: - Footnotes
+
+    private func kinds(_ doc: ReaderDocument) -> [String] {
+        doc.blocks.map {
+            switch $0.kind {
+            case .heading: "heading"
+            case .paragraph: "paragraph"
+            case .footnote(let marker): "footnote \(marker)"
+            }
+        }
+    }
+
+    @Test func liftsAFootnoteOutOfTheBodyAndRejoinsTheParagraphItInterrupted() {
+        let doc = StructureBuilder.build(lines: [
+            line("Alpha", 24), line("Body text that starts on page one and", 12), line("1 A footnote about it.", 8),
+            line("continues on page two.", 12, page: 1), line("Beta", 24, page: 1),
+            line("Final body text for the second section.", 12, page: 1),
+        ], fallbackTitle: "T")
+
+        #expect(doc.blocks.map(\.text) == [
+            "Alpha", "Body text that starts on page one and continues on page two.",
+            "A footnote about it.", "Beta", "Final body text for the second section.",
+        ])
+        #expect(kinds(doc) == ["heading", "paragraph", "footnote 1", "heading", "paragraph"])
+        #expect(doc.blocks.map(\.id) == Array(0..<5))
+    }
+
+    @Test func eachMarkerStartsItsOwnFootnote() {
+        let doc = StructureBuilder.build(lines: [
+            line("Alpha", 24), line("Body text on the first page of it.", 12),
+            line("* First note.", 8), line("† Second note.", 8),
+            line("Beta", 24, page: 1), line("Body text on the second page of it.", 12, page: 1),
+        ], fallbackTitle: "T")
+        #expect(kinds(doc) == ["heading", "paragraph", "footnote *", "footnote †", "heading", "paragraph"])
+        #expect(doc.blocks[2].text == "First note.")
+    }
+
+    @Test func unmarkedSmallLinesContinueTheFootnoteAbove() {
+        let doc = StructureBuilder.build(lines: [
+            line("Alpha", 24), line("Body text on the first page of it.", 12),
+            line("1 A note that runs", 8), line("onto a second line.", 8),
+            line("Beta", 24, page: 1), line("Body text on the second page of it.", 12, page: 1),
+        ], fallbackTitle: "T")
+        #expect(doc.blocks[2] == Block(id: 2, kind: .footnote(marker: "1"), text: "A note that runs onto a second line."))
+    }
+
+    @Test func smallTextWithoutAMarkerStaysInTheBody() {
+        let doc = StructureBuilder.build(lines: [
+            line("Alpha", 24), line("Body text on the first page of it.", 12), line("Figure caption text", 8),
+            line("Beta", 24, page: 1), line("Body text on the second page of it.", 12, page: 1),
+        ], fallbackTitle: "T")
+        #expect(kinds(doc) == ["heading", "paragraph", "paragraph", "heading", "paragraph"])
+    }
+
+    @Test func smallTextThatDoesNotEndThePageStaysInTheBody() {
+        let doc = StructureBuilder.build(lines: [
+            line("Alpha", 24), line("Body text on the first page of it.", 12),
+            line("1 A small aside", 8), line("More body text after the aside.", 12),
+            line("Beta", 24, page: 1), line("Body text on the second page of it.", 12, page: 1),
+        ], fallbackTitle: "T")
+        #expect(!kinds(doc).contains { $0.hasPrefix("footnote") })
+    }
+
+    @Test func aMarkerNeedsToBeAStandaloneNumber() {
+        let doc = StructureBuilder.build(lines: [
+            line("Alpha", 24), line("Body text on the first page of it.", 12), line("1999 was a small year", 8),
+            line("Beta", 24, page: 1), line("Body text on the second page of it.", 12, page: 1),
+        ], fallbackTitle: "T")
+        #expect(!kinds(doc).contains { $0.hasPrefix("footnote") })
+    }
+
+    @Test func footnotesInTheLastSectionGoAtTheEndOfTheDocument() {
+        let doc = StructureBuilder.build(lines: [
+            line("Alpha", 24), line("Body text on the first page of it.", 12),
+            line("Beta", 24, page: 1), line("Body text on the second page of it.", 12, page: 1),
+            line("1 The last note.", 8, page: 1),
+        ], fallbackTitle: "T")
+        #expect(kinds(doc) == ["heading", "paragraph", "heading", "paragraph", "footnote 1"])
+    }
+
+    @Test func outlineSectionsGetTheirFootnotesBeforeTheNextHeading() {
+        let doc = StructureBuilder.build(lines: [
+            line("Alpha", 12), line("Alpha body text that is long enough to be body text.", 12), line("1 A note.", 8),
+            line("Beta", 12, page: 1), line("Beta body text that is long enough to be body text.", 12, page: 1),
+        ], fallbackTitle: "T", outline: [
+            OutlineEntry(label: "Alpha", level: 1, pageIndex: 0),
+            OutlineEntry(label: "Beta", level: 1, pageIndex: 1),
+        ])
+        #expect(kinds(doc) == ["heading", "paragraph", "footnote 1", "heading", "paragraph"])
+    }
 }

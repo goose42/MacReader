@@ -73,4 +73,18 @@ struct PDFTextExtractorTests {
         let text = try PDFTextExtractor.extract(from: pdf).document.plainText
         #expect(text == "finally the file was first, and specific.")
     }
+
+    @Test func movesFootnotesIntoTheirOwnBlockAndRejoinsTheInterruptedParagraph() throws {
+        let pdf = PDFFixtures.makeStyledPDF(pages: [
+            [Run(text: "Alpha", size: 24), Run(text: "\(body) It carries on and", size: 12), Run(text: "1 A note.", size: 8)],
+            [Run(text: "ends on the next page.", size: 12)],
+            [Run(text: "Beta", size: 24), Run(text: body, size: 12)],
+        ])
+        let blocks = try PDFTextExtractor.extract(from: pdf).document.blocks
+
+        try #require(blocks.count == 5)
+        #expect(blocks.map(\.text) == ["Alpha", "\(body) It carries on and ends on the next page.", "A note.", "Beta", body])
+        #expect(blocks[2].kind == .footnote(marker: "1"))
+        #expect(blocks[1].sentences.count == 2)
+    }
 }

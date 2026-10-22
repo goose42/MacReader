@@ -9,6 +9,7 @@ struct OutlineEntry: Equatable, Sendable {
 /// Turns font-annotated PDF lines into headings and paragraphs.
 ///
 /// Headings come from the PDF's own outline when it has one, otherwise from lines set noticeably larger than body text.
+/// Footnotes are lifted out of the body and placed at the end of the section they appear in.
 enum StructureBuilder {
     private static let headingScale = 1.25
     private static let maxLevel = 3
@@ -20,6 +21,12 @@ enum StructureBuilder {
         case body([TextLine])
     }
 
+    /// A segment and the index of its first line among the body lines.
+    private struct Placed {
+        let segment: Segment
+        let start: Int
+    }
+
     private struct Run {
         let size: Double
         var lines: [TextLine]
@@ -28,14 +35,16 @@ enum StructureBuilder {
     static func build(lines: [TextLine], fallbackTitle: String, outline: [OutlineEntry] = []) -> ReaderDocument {
         guard !lines.isEmpty else { return ReaderDocument(title: fallbackTitle, blocks: []) }
 
+        let (bodyLines, notes) = FootnoteDetector.split(lines, bodySize: FontStatistics.bodySize(of: lines))
+
         var title = fallbackTitle
-        let segments: [Segment]
+        let segments: [Placed]
         if outline.isEmpty {
-            let result = segmentsBySize(lines)
+            let result = segmentsBySize(bodyLines)
             segments = result.segments
             if let titleText = result.title { title = titleText }
         } else {
-            segments = segmentsByOutline(lines, outline)
+            segments = segmentsByOutline(bodyLines, outline)
         }
 
         var blocks: [ReaderDocument.Block] = []
@@ -43,19 +52,31 @@ enum StructureBuilder {
             guard !text.isEmpty else { return }
             blocks.append(.init(id: blocks.count, kind: kind, text: text))
         }
-        for segment in segments {
-            switch segment {
-            case .heading(let level, let lines): append(.heading(level: level), normalized(lines))
-            case .insertedHeading(let level, let text): append(.heading(level: level), text)
+        var pendingNotes = notes[...]
+        func appendNotes(anchoredBy start: Int?) {
+            while let note = pendingNotes.first, start.map({ note.anchor <= $0 }) ?? true {
+                append(.footnote(marker: note.marker), normalized(note.lines))
+                pendingNotes.removeFirst()
+            }
+        }
+        for placed in segments {
+            switch placed.segment {
+            case .heading(let level, let lines):
+                appendNotes(anchoredBy: placed.start)
+                append(.heading(level: level), normalized(lines))
+            case .insertedHeading(let level, let text):
+                appendNotes(anchoredBy: placed.start)
+                append(.heading(level: level), text)
             case .body(let lines): append(.paragraph, normalized(lines))
             }
         }
+        appendNotes(anchoredBy: nil)
         return ReaderDocument(title: title, blocks: blocks)
     }
 
     // MARK: - Font-size headings
 
-    private static func segmentsBySize(_ lines: [TextLine]) -> (segments: [Segment], title: String?) {
+    private static func segmentsBySize(_ lines: [TextLine]) -> (segments: [Placed], title: String?) {
         let bodySize = FontStatistics.bodySize(of: lines)
         let runs = runs(of: lines)
         func isHeading(_ run: Run) -> Bool { run.size >= bodySize * headingScale }
@@ -73,17 +94,19 @@ enum StructureBuilder {
         }
 
         let ranked = headingSizes.sorted(by: >)
-        var segments: [Segment] = []
+        var segments: [Placed] = []
         var title: String?
+        var start = 0
         for (index, run) in runs.enumerated() {
+            defer { start += run.lines.count }
             if index == titleRun {
                 let text = normalized(run.lines)
                 title = text.isEmpty ? nil : text
             } else if isHeading(run) {
                 let rank = ranked.firstIndex(of: run.size) ?? 0
-                segments.append(.heading(level: min(rank + 1, maxLevel), lines: run.lines))
+                segments.append(Placed(segment: .heading(level: min(rank + 1, maxLevel), lines: run.lines), start: start))
             } else {
-                segments.append(.body(run.lines))
+                segments.append(Placed(segment: .body(run.lines), start: start))
             }
         }
         return (segments, title)
@@ -104,7 +127,7 @@ enum StructureBuilder {
 
     // MARK: - Outline headings
 
-    private static func segmentsByOutline(_ lines: [TextLine], _ outline: [OutlineEntry]) -> [Segment] {
+    private static func segmentsByOutline(_ lines: [TextLine], _ outline: [OutlineEntry]) -> [Placed] {
         // Anchor each entry to the lines that spell its label, or failing that to the start of its page.
         var anchors: [Int: [(level: Int, matched: Int, label: String)]] = [:]
         var searchFrom = 0
@@ -120,10 +143,11 @@ enum StructureBuilder {
             }
         }
 
-        var segments: [Segment] = []
+        var segments: [Placed] = []
         var pending: [TextLine] = []
+        var pendingStart = 0
         func flush() {
-            if !pending.isEmpty { segments.append(.body(pending)) }
+            if !pending.isEmpty { segments.append(Placed(segment: .body(pending), start: pendingStart)) }
             pending = []
         }
         var index = 0
@@ -132,16 +156,20 @@ enum StructureBuilder {
             for anchor in anchors[index] ?? [] {
                 flush()
                 if anchor.matched > 0 {
-                    segments.append(.heading(level: anchor.level, lines: Array(lines[index..<index + anchor.matched])))
+                    let heading = Segment.heading(level: anchor.level, lines: Array(lines[index..<index + anchor.matched]))
+                    segments.append(Placed(segment: heading, start: index))
                     consumed = max(consumed, anchor.matched)
                 } else {
-                    segments.append(.insertedHeading(level: anchor.level, text: anchor.label))
+                    segments.append(Placed(segment: .insertedHeading(level: anchor.level, text: anchor.label), start: index))
                 }
             }
             if consumed > 0 {
                 index += consumed
             } else {
-                if index < lines.count { pending.append(lines[index]) }
+                if index < lines.count {
+                    if pending.isEmpty { pendingStart = index }
+                    pending.append(lines[index])
+                }
                 index += 1
             }
         }
