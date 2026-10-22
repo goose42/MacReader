@@ -244,4 +244,20 @@ struct StructureBuilderTests {
         let doc = StructureBuilder.build(lines: [at("Only a paragraph here.", y: 700)], fallbackTitle: "T", tables: [pricing])
         #expect(doc.blocks.map(\.kind) == [.paragraph])
     }
+
+    @Test func keepsNumbersThatStandAloneInACell() {
+        // Outside a table a line that is only digits is a page number, but in a cell it is the data.
+        let lines = [
+            at("Year", y: 520, x: 80, width: 60), at("Count", y: 520, x: 220, width: 60),
+            at("2024", y: 470, x: 80, width: 60), at("17", y: 470, x: 220, width: 60),
+        ]
+        let doc = StructureBuilder.build(lines: lines, fallbackTitle: "T", tables: [pricing])
+        #expect(doc.blocks.first?.kind == .table(.init(rows: [["Year", "Count"], ["2024", "17"]], hasHeader: true)))
+    }
+
+    @Test func keepsANumberInsideABox() {
+        let doc = StructureBuilder.build(lines: [at("42", y: 620, width: 440)], fallbackTitle: "T", boxes: [noteBox])
+        #expect(doc.blocks.map(\.kind) == [.callout])
+        #expect(doc.blocks.first?.text == "42")
+    }
 }

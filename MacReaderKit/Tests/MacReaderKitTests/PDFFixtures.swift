@@ -161,4 +161,37 @@ enum PDFFixtures {
         pdf.append(Data("trailer\n<< /Size \(offsets.count + 1) /Root 1 0 R >>\nstartxref\n\(xref)\n%%EOF\n".utf8))
         return pdf
     }
+
+    /// One page: a paragraph, a three-column table whose row separators are drawn per cell (a header above the first
+    /// rule, two rows between rules, one row under the last), and a closing paragraph.
+    static func makeRuledTablePDF() -> Data {
+        let data = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let context = CGContext(consumer: CGDataConsumer(data: data)!, mediaBox: &box, nil)!
+        context.beginPDFPage(nil)
+        func draw(_ text: String, x: CGFloat, y: CGFloat) {
+            let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+            let attributed = NSAttributedString(string: text, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font])
+            context.textPosition = CGPoint(x: x, y: y)
+            CTLineDraw(CTLineCreateWithAttributedString(attributed), context)
+        }
+        let xs: [CGFloat] = [80, 190, 330]
+        draw("Intro text before the table.", x: 72, y: 700)
+        context.setFillColor(CGColor(gray: 0.6, alpha: 1))
+        for y: CGFloat in [600, 560, 520] {
+            for (from, to) in [(72, 150), (151, 300), (301, 450)] {
+                context.fill(CGRect(x: CGFloat(from), y: y, width: CGFloat(to - from), height: 1))
+            }
+        }
+        context.setFillColor(CGColor(gray: 0, alpha: 1))
+        let rows: [(CGFloat, [String])] = [
+            (612, ["NAME", "ROLE", "SINCE"]), (574, ["Ada", "Engineer", "1999"]),
+            (534, ["Grace", "Admiral", "1944"]), (498, ["Linus", "Maintainer", "1991"]),
+        ]
+        for (y, cells) in rows { for (x, cell) in zip(xs, cells) { draw(cell, x: x, y: y) } }
+        draw("Closing text after the table.", x: 72, y: 400)
+        context.endPDFPage()
+        context.closePDF()
+        return data as Data
+    }
 }

@@ -281,7 +281,7 @@ enum StructureBuilder {
 
         func text(_ lines: [TextLine]) -> String {
             let ordered = lines.sorted { $0.bounds.maxY != $1.bounds.maxY ? $0.bounds.maxY > $1.bounds.maxY : $0.bounds.minX < $1.bounds.minX }
-            return normalized(ordered).replacingOccurrences(of: "\t", with: " ").replacingOccurrences(of: "\n", with: " ")
+            return normalized(ordered, dropsPageNumbers: false).replacingOccurrences(of: "\t", with: " ").replacingOccurrences(of: "\n", with: " ")
         }
         let kept = cells.indices.filter { row in cells[row].contains { !$0.isEmpty } }
         let rows = kept.map { row in cells[row].map(text) }
@@ -295,7 +295,7 @@ enum StructureBuilder {
     private static func calloutText(_ lines: [TextLine], in box: CGRect) -> String {
         let wrapped = lines.dropLast()
         let isProse = wrapped.allSatisfy { $0.bounds.width >= box.width * proseFill }
-        guard lines.count > 1, !isProse else { return normalized(lines) }
+        guard lines.count > 1, !isProse else { return normalized(lines, dropsPageNumbers: false) }
 
         let left = lines.map(\.bounds.minX).min() ?? 0
         let widths = lines.map { $0.bounds.width / CGFloat(max($0.text.count, 1)) }.sorted()
@@ -308,8 +308,8 @@ enum StructureBuilder {
 
     // MARK: - Helpers
 
-    private static func normalized(_ lines: [TextLine]) -> String {
-        TextNormalizer.normalize(lines.map(\.text).joined(separator: "\n"))
+    private static func normalized(_ lines: [TextLine], dropsPageNumbers: Bool = true) -> String {
+        TextNormalizer.normalize(lines.map(\.text).joined(separator: "\n"), dropsPageNumbers: dropsPageNumbers)
     }
 
     private static func key(_ text: String) -> String {
