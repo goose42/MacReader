@@ -7,6 +7,7 @@ struct ReaderView: View {
     /// False while the sidebar has keyboard focus, so its arrow keys keep moving the selection.
     let stepsWithArrowKeys: Bool
     @AppStorage("readerFontSize") private var fontSize = 20.0
+    @AppStorage("highlightColor") private var highlightColor = HighlightColor.accent
     @State private var isShowingContents = false
     @State private var navigator: SentenceNavigator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -97,7 +98,7 @@ struct ReaderView: View {
         guard let utf16 = navigator.highlight(in: block.id),
               let range = Range(NSRange(location: utf16.lowerBound, length: utf16.count), in: text)
         else { return text }
-        text[range].backgroundColor = Color.accentColor.opacity(0.25)
+        text[range].backgroundColor = highlightColor.fill
         if differentiateWithoutColor { text[range].underlineStyle = .single }
         return text
     }

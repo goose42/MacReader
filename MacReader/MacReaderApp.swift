@@ -29,5 +29,6 @@ struct MacReaderApp: App {
                     .disabled(sentenceNavigation == nil)
             }
         }
+        Settings { SettingsView() }
     }
 }
