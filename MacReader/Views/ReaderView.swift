@@ -82,6 +82,8 @@ struct ReaderView: View {
                 .accessibilityLabel("Boxed text. \(block.text)")
         case .image(let name, let aspectRatio):
             FigureView(url: imageURL(name), aspectRatio: aspectRatio)
+        case .table(let table):
+            TableView(table: table, fontSize: fontSize)
         }
     }
 
@@ -122,6 +124,43 @@ struct ReaderView: View {
                     scrollTo(id)
                 }
             }
+    }
+}
+
+/// A table from the PDF: columns share the width, the header row is set off, and rows are separated by hairlines.
+private struct TableView: View {
+    let table: ReaderDocument.Table
+    let fontSize: Double
+
+    private var columnCount: Int { table.rows.map(\.count).max() ?? 0 }
+
+    var body: some View {
+        Grid(alignment: .topLeading, horizontalSpacing: fontSize * 0.9, verticalSpacing: 0) {
+            ForEach(table.rows.indices, id: \.self) { row in
+                if row > 0 { Divider().gridCellUnsizedAxes(.horizontal) }
+                GridRow {
+                    ForEach(0..<columnCount, id: \.self) { column in
+                        cell(table.rows[row].indices.contains(column) ? table.rows[row][column] : "", isHeader: table.hasHeader && row == 0)
+                    }
+                }
+                .background(table.hasHeader && row == 0 ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Table, \(table.rows.count) rows, \(columnCount) columns")
+    }
+
+    private func cell(_ text: String, isHeader: Bool) -> some View {
+        Text(text)
+            .font(.system(size: fontSize * 0.85, weight: isHeader ? .semibold : .regular))
+            .lineSpacing(fontSize * 0.2)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, fontSize * 0.6)
+            .padding(.vertical, fontSize * 0.45)
+            .accessibilityAddTraits(isHeader ? .isHeader : [])
     }
 }
 
