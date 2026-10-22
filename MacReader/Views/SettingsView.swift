@@ -2,12 +2,19 @@ import MacReaderKit
 import SwiftUI
 
 struct SettingsView: View {
+    @AppStorage("readerColumnWidth") private var columnWidth = ReaderColumnWidth.narrow
     @AppStorage("highlightColor") private var highlightColor = ColorChoice.automatic
     @AppStorage("dimsSurroundingText") private var dimsSurroundingText = true
     @AppStorage("dimmedTextColor") private var dimmedTextColor = ColorChoice.automatic
 
     var body: some View {
         Form {
+            Picker("Column Width", selection: $columnWidth) {
+                ForEach(ReaderColumnWidth.allCases) { width in
+                    Text(width.title).tag(width)
+                }
+            }
+            .pickerStyle(.segmented)
             colorRow("Sentence Highlight", choice: $highlightColor, automatic: .accentColor, resetTitle: "Use Accent Color")
             Toggle("Dim Surrounding Text", isOn: $dimsSurroundingText)
             colorRow("Dimmed Text", choice: $dimmedTextColor, automatic: .secondary, resetTitle: "Use Default")
