@@ -52,17 +52,12 @@ enum PDFFixtures {
             }
             context.endPDFPage()
         }
-        context.closePDF()
-        guard !outline.isEmpty, let document = PDFDocument(data: data as Data) else { return data as Data }
-
-        let root = PDFOutline()
-        for (index, entry) in outline.enumerated() {
-            let item = PDFOutline()
-            item.label = entry.label
-            item.destination = PDFDestination(page: document.page(at: entry.page)!, at: CGPoint(x: 0, y: 700))
-            root.insertChild(item, at: index)
+        if !outline.isEmpty {
+            // PDFKit can't serialize outlines, so write them through Core Graphics (destinations are 1-based pages).
+            let children = outline.map { [kCGPDFOutlineTitle: $0.label, kCGPDFOutlineDestination: $0.page + 1] as [CFString: Any] }
+            CGPDFContextSetOutline(context, [kCGPDFOutlineChildren: children] as CFDictionary)
         }
-        document.outlineRoot = root
-        return document.dataRepresentation() ?? (data as Data)
+        context.closePDF()
+        return data as Data
     }
 }

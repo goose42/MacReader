@@ -17,11 +17,12 @@ public struct LibraryStore: Sendable {
     @discardableResult
     public func ingest(pdfAt url: URL) throws -> LibraryItem {
         let data = try Data(contentsOf: url)
-        let extracted = try PDFTextExtractor.extract(from: data)
+        let extracted = try PDFTextExtractor.extract(
+            from: data, fallbackTitle: url.deletingPathExtension().lastPathComponent)
 
         let item = LibraryItem(
             id: UUID(),
-            title: extracted.title ?? url.deletingPathExtension().lastPathComponent,
+            title: extracted.document.title,
             sourceFileName: url.lastPathComponent,
             dateAdded: Date(),
             pageCount: extracted.pageCount)
@@ -32,7 +33,7 @@ public struct LibraryStore: Sendable {
         defer { try? fileManager.removeItem(at: staging) }
         try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
         try data.write(to: staging.appendingPathComponent("original.pdf"))
-        try extracted.text.write(to: staging.appendingPathComponent("content.txt"), atomically: true, encoding: .utf8)
+        try extracted.document.plainText.write(to: staging.appendingPathComponent("content.txt"), atomically: true, encoding: .utf8)
         try Self.encoder.encode(item).write(to: staging.appendingPathComponent("metadata.json"))
 
         try fileManager.createDirectory(at: itemsDirectory, withIntermediateDirectories: true)
