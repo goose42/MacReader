@@ -7,6 +7,7 @@ struct ReaderView: View {
     /// False while the sidebar has keyboard focus, so its arrow keys keep moving the selection.
     let stepsWithArrowKeys: Bool
     @AppStorage("readerFontSize") private var fontSize = 20.0
+    @AppStorage("readerColumnWidth") private var columnWidth = ReaderColumnWidth.narrow
     @AppStorage("highlightColor") private var highlightColor = ColorChoice.automatic
     @AppStorage("dimmedTextColor") private var dimmedTextColor = ColorChoice.automatic
     @AppStorage("dimsSurroundingText") private var dimsSurroundingText = true
@@ -34,8 +35,8 @@ struct ReaderView: View {
                     }
                 }
                 .textSelection(.enabled)
-                .frame(maxWidth: 680, alignment: .leading)
-                .padding(.horizontal, 32)
+                .frame(maxWidth: columnWidth.maxWidth ?? .infinity, alignment: .leading)
+                .padding(.horizontal, columnWidth.horizontalPadding)
                 .padding(.vertical, 40)
                 .frame(maxWidth: .infinity)
             }
@@ -58,6 +59,13 @@ struct ReaderView: View {
                     contentsButton(scrollTo: { id in
                         withAnimation { proxy.scrollTo(id, anchor: .top) }
                     })
+                    Picker("Column Width", selection: $columnWidth.animation()) {
+                        ForEach(ReaderColumnWidth.allCases) { width in
+                            Label(width.title, systemImage: width.systemImage).tag(width)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .help("Set text in a narrow column or across the whole window")
                     Button("Smaller Text", systemImage: "textformat.size.smaller") { fontSize = max(14, fontSize - 2) }
                         .keyboardShortcut("-")
                     Button("Larger Text", systemImage: "textformat.size.larger") { fontSize = min(36, fontSize + 2) }
