@@ -33,13 +33,13 @@ enum StructureBuilder {
     /// reading order, splitting a paragraph if one runs past them. Everything else flows as before.
     static func build(
         lines allLines: [TextLine], fallbackTitle: String, outline: [OutlineEntry] = [],
-        boxes: [PageBox] = [], figures: [Figure] = []
+        boxes: [PageBox] = [], figures: [Figure] = [], tables: [TableGrid] = []
     ) -> ReaderDocument {
         guard !allLines.isEmpty else { return ReaderDocument(title: fallbackTitle, blocks: []) }
 
         var allLines = allLines
         for index in allLines.indices { allLines[index].sequence = index }
-        let (lines, visuals) = separateVisuals(allLines, boxes: boxes, figures: figures)
+        let (lines, visuals) = separateVisuals(allLines, boxes: boxes, figures: figures, tables: tables)
 
         var title = fallbackTitle
         var segments: [Segment] = []
@@ -99,8 +99,19 @@ enum StructureBuilder {
     /// Splits off the lines that sit inside a box, returning the remaining flow and a visual for every box with
     /// text and every figure. A visual's anchor is the sequence number of the line it should appear before.
     private static func separateVisuals(
-        _ lines: [TextLine], boxes: [PageBox], figures: [Figure]
+        _ allLines: [TextLine], boxes: [PageBox], figures: [Figure], tables: [TableGrid]
     ) -> (flow: [TextLine], visuals: [Visual]) {
+        var visuals: [Visual] = []
+        var lines = allLines
+        for grid in tables {
+            let members = lines.filter { $0.pageIndex == grid.pageIndex && grid.region.contains(CGPoint(x: $0.bounds.midX, y: $0.bounds.midY)) }
+            guard let table = table(for: grid, from: members), let anchor = members.map(\.sequence).min() else { continue }
+            let text = table.rows.map { $0.joined(separator: "\t") }.joined(separator: "\n")
+            visuals.append(Visual(anchor: anchor, kind: .table(table), text: text))
+            let taken = Set(members.map(\.sequence))
+            lines.removeAll { taken.contains($0.sequence) }
+        }
+
         var members: [[TextLine]] = Array(repeating: [], count: boxes.count)
         var flow: [TextLine] = []
         for line in lines {
@@ -113,7 +124,6 @@ enum StructureBuilder {
             }
         }
 
-        var visuals: [Visual] = []
         for (box, boxLines) in zip(boxes, members) where !boxLines.isEmpty {
             // A short highlight behind part of one line is inline emphasis (code, a marker), not a box.
             guard boxLines.count >= minBoxLines || box.rect.width >= minSingleLineBoxWidth else {
@@ -253,6 +263,31 @@ enum StructureBuilder {
     private static func withoutLeadingNumber(_ text: String) -> String {
         guard let match = text.firstMatch(of: /^(\d{1,2}(?:\.\d+)*\.?|[IVXLC]+\.)\s+/) else { return text }
         return String(text[match.range.upperBound...])
+    }
+
+    /// The cells of `grid` filled from the lines that sit in it, or nil if what is there is not really a table.
+    private static func table(for grid: TableGrid, from members: [TextLine]) -> ReaderDocument.Table? {
+        let edges = grid.rowEdges
+        let boundaries = grid.columnBoundaries
+        let columnCount = grid.columns.count
+        let rowCount = edges.count - 1
+        guard columnCount >= 2, rowCount >= 1, !members.isEmpty else { return nil }
+
+        var cells = Array(repeating: Array(repeating: [TextLine](), count: columnCount), count: rowCount)
+        for line in members {
+            let row = (0..<rowCount).first { line.bounds.midY <= edges[$0] && line.bounds.midY > edges[$0 + 1] } ?? rowCount - 1
+            cells[row][boundaries.filter { line.bounds.midX >= $0 }.count].append(line)
+        }
+
+        func text(_ lines: [TextLine]) -> String {
+            let ordered = lines.sorted { $0.bounds.maxY != $1.bounds.maxY ? $0.bounds.maxY > $1.bounds.maxY : $0.bounds.minX < $1.bounds.minX }
+            return normalized(ordered).replacingOccurrences(of: "\t", with: " ").replacingOccurrences(of: "\n", with: " ")
+        }
+        let kept = cells.indices.filter { row in cells[row].contains { !$0.isEmpty } }
+        let rows = kept.map { row in cells[row].map(text) }
+        let filledColumns = (0..<columnCount).filter { column in rows.contains { !$0[column].isEmpty } }
+        guard rows.count >= 2, filledColumns.count >= 2 else { return nil }
+        return ReaderDocument.Table(rows: rows, hasHeader: grid.hasHeader && kept.first == 0)
     }
 
     /// Wrapped prose reflows like any paragraph. Anything ragged (code, a table, a list) keeps the PDF's line breaks,

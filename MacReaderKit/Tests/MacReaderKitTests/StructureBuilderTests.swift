@@ -194,4 +194,54 @@ struct StructureBuilderTests {
         ], fallbackTitle: "T", boxes: [noteBox])
         #expect(doc.blocks.first?.text == "class A:\n  def f(self):\n    return 1")
     }
+
+    // MARK: - Tables
+
+    private let pricing = TableGrid(pageIndex: 0, columns: [72...200, 202...400], rules: [500, 450], top: 536, bottom: 380)
+
+    private var pricingLines: [TextLine] {
+        [
+            at("Intro paragraph with some words.", y: 700),
+            at("Module", y: 520, x: 80, width: 60), at("Target", y: 520, x: 220, width: 60),
+            at("Python", y: 470, x: 80, width: 60), at("2 days", y: 470, x: 220, width: 60),
+            at("APIs", y: 420, x: 80, width: 60), at("1.5 days", y: 420, x: 220, width: 60),
+            at("and more", y: 404, x: 220, width: 60),
+            at("Closing paragraph with some words.", y: 200),
+        ]
+    }
+
+    @Test func buildsATableBlockFromCellsPlacedByPosition() {
+        let doc = StructureBuilder.build(lines: pricingLines, fallbackTitle: "T", tables: [pricing])
+
+        #expect(doc.blocks.map(\.kind) == [
+            .paragraph,
+            .table(.init(rows: [["Module", "Target"], ["Python", "2 days"], ["APIs", "1.5 days and more"]], hasHeader: true)),
+            .paragraph,
+        ])
+        #expect(doc.blocks[1].text == "Module\tTarget\nPython\t2 days\nAPIs\t1.5 days and more")
+    }
+
+    @Test func keepsTableTextOutOfTheParagraphs() {
+        let doc = StructureBuilder.build(lines: pricingLines, fallbackTitle: "T", tables: [pricing])
+        #expect(doc.blocks.filter { $0.kind == .paragraph }.map(\.text) == [
+            "Intro paragraph with some words.", "Closing paragraph with some words.",
+        ])
+    }
+
+    @Test func leavesEmptyCellsEmpty() {
+        let lines = [at("Module", y: 520, x: 80, width: 60), at("Target", y: 520, x: 220, width: 60), at("Python", y: 470, x: 80, width: 60)]
+        let doc = StructureBuilder.build(lines: lines, fallbackTitle: "T", tables: [pricing])
+        #expect(doc.blocks.first?.kind == .table(.init(rows: [["Module", "Target"], ["Python", ""]], hasHeader: true)))
+    }
+
+    @Test func fallsBackToTheFlowWhenTheGridHasASingleColumn() {
+        let single = TableGrid(pageIndex: 0, columns: [72...400], rules: [500, 450], top: 536, bottom: 380)
+        let doc = StructureBuilder.build(lines: pricingLines, fallbackTitle: "T", tables: [single])
+        #expect(!doc.blocks.contains { if case .table = $0.kind { true } else { false } })
+    }
+
+    @Test func fallsBackToTheFlowWhenNoTextFallsInTheTable() {
+        let doc = StructureBuilder.build(lines: [at("Only a paragraph here.", y: 700)], fallbackTitle: "T", tables: [pricing])
+        #expect(doc.blocks.map(\.kind) == [.paragraph])
+    }
 }
