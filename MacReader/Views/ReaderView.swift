@@ -8,6 +8,7 @@ struct ReaderView: View {
     let stepsWithArrowKeys: Bool
     @AppStorage("readerFontSize") private var fontSize = 20.0
     @AppStorage("highlightColor") private var highlightColor = HighlightColor.accent
+    @AppStorage("dimsSurroundingText") private var dimsSurroundingText = true
     @State private var isShowingContents = false
     @State private var navigator: SentenceNavigator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -80,7 +81,7 @@ struct ReaderView: View {
         case .footnote(let marker):
             HStack(alignment: .firstTextBaseline, spacing: fontSize * 0.5) {
                 Text(marker).foregroundStyle(.secondary)
-                Text(block.text)
+                Text(block.text).foregroundStyle(isDimming ? .secondary : .primary)
             }
             .font(.system(size: fontSize * 0.8, design: .monospaced))
             .padding(fontSize * 0.6)
@@ -92,13 +93,18 @@ struct ReaderView: View {
         }
     }
 
-    /// The block's text with the navigator's current sentence marked, if it falls in this block.
+    /// Whether text outside the current sentence is dimmed, which only makes sense while there is a current sentence.
+    private var isDimming: Bool { dimsSurroundingText && navigator.current != nil }
+
+    /// The block's text with the navigator's current sentence marked, if it falls in this block, and the rest dimmed.
     private func highlighted(_ block: ReaderDocument.Block) -> AttributedString {
         var text = AttributedString(block.text)
+        if isDimming { text.foregroundColor = .secondary }
         guard let utf16 = navigator.highlight(in: block.id),
               let range = Range(NSRange(location: utf16.lowerBound, length: utf16.count), in: text)
         else { return text }
         text[range].backgroundColor = highlightColor.fill
+        text[range].foregroundColor = .primary
         if differentiateWithoutColor { text[range].underlineStyle = .single }
         return text
     }
