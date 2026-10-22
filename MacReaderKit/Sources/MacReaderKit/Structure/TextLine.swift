@@ -10,6 +10,8 @@ public struct TextLine: Equatable, Sendable {
     public let bounds: CGRect
     /// The line's position in reading order; assigned when a document is built.
     var sequence = 0
+    /// Where the line's text starts in its page's text, so individual characters can be located on the page.
+    var sourceLocation: Int?
 
     public init(text: String, fontSize: Double, pageIndex: Int, bounds: CGRect = .zero) {
         self.text = text

@@ -17,7 +17,9 @@ enum PDFLineReader {
                 let font = attributed.attribute(.font, at: location, effectiveRange: nil) as? NSFont
                 let bounds = page.selection(for: NSRange(location: location, length: (line as NSString).length))?
                     .bounds(for: page) ?? .zero
-                result.append(TextLine(text: text, fontSize: Double(font?.pointSize ?? 0), pageIndex: pageIndex, bounds: bounds))
+                var textLine = TextLine(text: text, fontSize: Double(font?.pointSize ?? 0), pageIndex: pageIndex, bounds: bounds)
+                textLine.sourceLocation = location + (line as NSString).length - (line.drop(while: { $0 == " " || $0 == "\t" }) as NSString).length
+                result.append(textLine)
             }
         }
         return result
