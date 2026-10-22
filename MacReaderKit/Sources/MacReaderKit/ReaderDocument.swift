@@ -5,16 +5,24 @@ public struct ReaderDocument: Codable, Equatable, Sendable {
         public enum Kind: Codable, Equatable, Sendable {
             case heading(level: Int)
             case paragraph
+            case footnote(marker: String)
         }
 
         public let id: Int
         public let kind: Kind
         public let text: String
+        /// The reading stops within `text`, as UTF-16 offsets. A heading is one stop; footnotes have none.
+        public let sentences: [Range<Int>]
 
         public init(id: Int, kind: Kind, text: String) {
             self.id = id
             self.kind = kind
             self.text = text
+            switch kind {
+            case .heading: sentences = text.isEmpty ? [] : [0..<text.utf16.count]
+            case .paragraph: sentences = SentenceSegmenter.ranges(in: text)
+            case .footnote: sentences = []
+            }
         }
     }
 

@@ -84,6 +84,21 @@ struct LibraryStoreTests {
         #expect(try store.text(for: item) == "Legacy body text.")
     }
 
+    @Test func documentForRebuildsDocumentsSavedBeforeSentenceRangesExisted() throws {
+        let root = try makeLibrary()
+        let store = LibraryStore(root: root)
+        let item = try store.ingest(pdfAt: writePDF(named: "doc.pdf", pages: ["First one. Second one."]))
+        let folder = root.appendingPathComponent("Items/\(item.id.uuidString)")
+        let legacy = #"{"title":"Old","blocks":[{"id":0,"kind":{"paragraph":{}},"text":"First one. Second one."}]}"#
+        try legacy.write(to: folder.appendingPathComponent("document.json"), atomically: true, encoding: .utf8)
+
+        let document = try store.document(for: item)
+
+        #expect(document.blocks.first?.sentences == [0..<10, 11..<22])
+        let saved = try JSONDecoder().decode(ReaderDocument.self, from: Data(contentsOf: folder.appendingPathComponent("document.json")))
+        #expect(saved == document)
+    }
+
     @Test func deleteRemovesTheItemFolderEntirely() throws {
         let root = try makeLibrary()
         let store = LibraryStore(root: root)
