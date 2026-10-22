@@ -4,15 +4,17 @@ import SwiftUI
 /// A minimal, read-only reading surface in the spirit of Safari Reader.
 struct ReaderView: View {
     let document: ReaderDocument
+    /// False while the sidebar has keyboard focus, so its arrow keys keep moving the selection.
+    let stepsWithArrowKeys: Bool
     @AppStorage("readerFontSize") private var fontSize = 20.0
     @State private var isShowingContents = false
     @State private var navigator: SentenceNavigator
-    @FocusState private var isFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
-    init(document: ReaderDocument) {
+    init(document: ReaderDocument, stepsWithArrowKeys: Bool = true) {
         self.document = document
+        self.stepsWithArrowKeys = stepsWithArrowKeys
         _navigator = State(initialValue: SentenceNavigator(document: document))
     }
 
@@ -35,13 +37,9 @@ struct ReaderView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(.background)
-            .focusable()
-            .focusEffectDisabled()
-            .focused($isFocused)
-            .focusedValue(\.sentenceNavigation, SentenceNavigation(
-                next: { navigator.next() }, previous: { navigator.previous() }))
-            .simultaneousGesture(TapGesture().onEnded { isFocused = true })
-            .onAppear { isFocused = true }
+            .focusedSceneValue(\.sentenceNavigation, stepsWithArrowKeys && !isShowingContents
+                ? SentenceNavigation(next: { navigator.next() }, previous: { navigator.previous() })
+                : nil)
             .onChange(of: document) { navigator = SentenceNavigator(document: document) }
             .onChange(of: navigator.current) { _, position in
                 guard let position else { return }
