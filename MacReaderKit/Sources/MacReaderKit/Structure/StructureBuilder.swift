@@ -50,7 +50,7 @@ enum StructureBuilder {
             case .body(let lines): append(.paragraph, normalized(lines))
             }
         }
-        return ReaderDocument(title: title, blocks: blocks)
+        return ReaderDocument(title: title, blocks: HeadingNumbering.apply(to: blocks))
     }
 
     // MARK: - Font-size headings
@@ -154,14 +154,24 @@ enum StructureBuilder {
         let target = key(label)
         guard !target.isEmpty else { return nil }
         for start in from..<lines.count where lines[start].pageIndex == page {
-            var spelled = ""
-            for end in start..<lines.count {
-                spelled += key(lines[end].text)
-                if spelled == target { return (start, end - start + 1) }
-                if !target.hasPrefix(spelled) { break }
+            // The printed line may carry a section number the outline label leaves out ("1 Introduction").
+            for firstLine in [lines[start].text, withoutLeadingNumber(lines[start].text)] {
+                var spelled = key(firstLine)
+                var end = start
+                while true {
+                    if spelled == target { return (start, end - start + 1) }
+                    guard target.hasPrefix(spelled), end + 1 < lines.count else { break }
+                    end += 1
+                    spelled += key(lines[end].text)
+                }
             }
         }
         return nil
+    }
+
+    private static func withoutLeadingNumber(_ text: String) -> String {
+        guard let match = text.firstMatch(of: /^(\d{1,2}(?:\.\d+)*\.?|[IVXLC]+\.)\s+/) else { return text }
+        return String(text[match.range.upperBound...])
     }
 
     // MARK: - Helpers

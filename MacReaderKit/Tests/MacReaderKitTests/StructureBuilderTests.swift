@@ -85,4 +85,24 @@ struct StructureBuilderTests {
         #expect(doc.blocks.map(\.text) == ["Body text on the first page.", "Chapter 2", "Body text on the second page."])
         #expect(doc.tableOfContents == [.init(id: 1, title: "Chapter 2", level: 1)])
     }
+
+    @Test func numbersHeadingsFromEyebrowLabelsAndInlinePrefixes() {
+        let body = "body body body body body body body body body body."
+        let doc = StructureBuilder.build(lines: [
+            line("MODULE 1", 10), line("First topic", 24), line(body, 12),
+            line("2.1 Second topic", 24, page: 1), line(body, 12, page: 1),
+        ], fallbackTitle: "T")
+        #expect(doc.tableOfContents == [
+            .init(id: 0, title: "First topic", level: 1, numbering: .init(label: "Module 1", placement: .eyebrow)),
+            .init(id: 2, title: "Second topic", level: 1, numbering: .init(label: "2.1", placement: .inline)),
+        ])
+    }
+
+    @Test func anchorsAnOutlineEntryToANumberedLineWithoutDuplicatingTheHeading() {
+        let doc = StructureBuilder.build(lines: [
+            line("1 Introduction", 12), line("intro body text that is long enough to be body text.", 12),
+        ], fallbackTitle: "T", outline: [OutlineEntry(label: "Introduction", level: 1, pageIndex: 0)])
+        #expect(doc.blocks.map(\.text) == ["Introduction", "intro body text that is long enough to be body text."])
+        #expect(doc.tableOfContents == [.init(id: 0, title: "Introduction", level: 1, numbering: .init(label: "1", placement: .inline))])
+    }
 }
