@@ -16,6 +16,7 @@ A native macOS app (Swift + SwiftUI) that makes reading easier. Users pick a lib
 
 - `MacReaderKit/` is a local Swift package holding all logic (PDF extraction, text normalization, library storage, view models). Tested with Swift Testing.
 - `MacReader/` is the thin SwiftUI app target. Views stay declarative; logic belongs in MacReaderKit.
+- `Scripts/generate-ligature-table.sh` regenerates `Structure/CodeLigatureTable.swift` (outline fingerprints of JetBrains Mono's code ligatures) from the font file. PDF generators embed that font with no usable Unicode map, so ligatures like `-->` are recognised by glyph shape rather than text.
 - `project.yml` is the XcodeGen spec. The `.xcodeproj` is generated and not committed.
 
 ### Library on-disk format
