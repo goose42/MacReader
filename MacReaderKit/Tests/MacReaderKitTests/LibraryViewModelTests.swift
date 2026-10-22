@@ -110,4 +110,18 @@ struct LibraryViewModelTests {
         model.delete(model.items[1])
         #expect(model.selectedDocument?.plainText.contains("words") == true)
     }
+
+    @Test func resolvesTheSelectedDocumentsImageFiles() throws {
+        let model = makeViewModel()
+        model.chooseLibrary(try makeFolder())
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString)-visual.pdf")
+        try PDFFixtures.makeVisualPDF().write(to: url)
+        model.addPDFs([url])
+        #expect(model.selectedImageURL(named: "p1-1.png") == nil)
+
+        model.select(model.items[0])
+
+        let imageURL = try #require(model.selectedImageURL(named: "p1-1.png"))
+        #expect(FileManager.default.fileExists(atPath: imageURL.path))
+    }
 }

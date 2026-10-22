@@ -52,4 +52,24 @@ struct LigatureRepairerTests {
         let lines = ["Dle Drst Dnally", "payoR Redis Starlette Sundeep Suency"]
         #expect(r.repair(lines) == ["file first finally", "payoff Redis Starlette Sundeep fluency"])
     }
+
+    @Test func learnsLigaturesExtractedAsOtherLettersAndPunctuation() {
+        let r = repairer("first", "prefix", "defined", "confirm", "conflict", "flushes", "snowflake", "fluency", "the", "a")
+        let lines = ["Zrst preZx deZned ConZrm", "the con_ict _ushes Snow_ake", "a 'uency"]
+        #expect(r.repair(lines) == ["first prefix defined Confirm", "the conflict flushes Snowflake", "a fluency"])
+    }
+
+    @Test func picksTheLigatureThatMakesWordsForEachGlyph() {
+        // The same document uses Z for "fi" and _ for "fl": each glyph gets its own replacement.
+        let r = repairer("first", "prefix", "conflict", "flushes", "defined")
+        #expect(r.repair(["Zrst preZx deZned", "con_ict _ushes"]) == ["first prefix defined", "conflict flushes"])
+    }
+
+    @Test func leavesIdentifiersAndContractionsAlone() {
+        let r = repairer("first", "prefix", "defined", "conflict", "flushes", "doesn't", "move", "to", "end")
+        let lines = ["Zrst preZx deZned con_ict _ushes", "self.d.move_to_end(k) and doesn't file_storage _apply"]
+        #expect(r.repair(lines) == [
+            "first prefix defined conflict flushes", "self.d.move_to_end(k) and doesn't file_storage _apply",
+        ])
+    }
 }
