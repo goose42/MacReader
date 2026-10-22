@@ -64,8 +64,8 @@ struct HomeView: View {
                 }
             }
         } detail: {
-            if let item = library.items.first(where: { $0.id == selection }) {
-                ReaderView(title: item.title, text: library.selectedText ?? "")
+            if let document = library.selectedDocument {
+                ReaderView(document: document)
             } else {
                 ContentUnavailableView("Select a Document", systemImage: "doc.text")
             }

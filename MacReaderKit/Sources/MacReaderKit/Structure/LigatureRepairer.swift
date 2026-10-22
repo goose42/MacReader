@@ -48,16 +48,16 @@ public struct LigatureRepairer: Sendable {
             tallies.append((capital, hits, misses))
         }
 
-        func accepted(_ tally: (capital: Character, hits: Int, misses: Int), minimumHits: Int) -> Bool {
-            tally.hits >= minimumHits && Double(tally.misses) / Double(tally.hits + tally.misses) <= Self.maxMissRatio
-        }
+        // Once one rule is solidly established, the font is known to map ligatures to capitals, so other rules need a
+        // single supporting word. Their misses are mostly proper nouns ("Redis"), and a rule can only change a word
+        // when its replacement is itself a real word, so that is safe.
+        let strong = tallies.filter { $0.hits >= 2 && Self.missRatio($0.hits, $0.misses) <= Self.maxMissRatio }
+        let learned = strong.isEmpty ? [] : tallies.filter { $0.hits >= 1 }
+        return Dictionary(uniqueKeysWithValues: learned.map { ($0.capital, Self.candidates[$0.capital]!) })
+    }
 
-        // A single supporting word is enough once another rule shows this font maps ligatures to capitals.
-        let strong = tallies.filter { accepted($0, minimumHits: 2) }
-        let minimumHits = strong.isEmpty ? 2 : 1
-        return Dictionary(uniqueKeysWithValues: tallies
-            .filter { accepted($0, minimumHits: minimumHits) }
-            .map { ($0.capital, Self.candidates[$0.capital]!) })
+    private static func missRatio(_ hits: Int, _ misses: Int) -> Double {
+        Double(misses) / Double(hits + misses)
     }
 
     // MARK: - Applying

@@ -46,4 +46,10 @@ struct LigatureRepairerTests {
         let r = repairer("file", "first", "payoff", "payor", "mcdonald")
         #expect(r.repair(["Dle Drst", "payoR McDonald"]) == ["file first", "payoff McDonald"])
     }
+
+    @Test func properNounsDoNotBlockASingleWordRuleOnceTheFontIsKnownToUseLigatureCapitals() {
+        let r = repairer("file", "first", "finally", "payoff", "fluency")
+        let lines = ["Dle Drst Dnally", "payoR Redis Starlette Sundeep Suency"]
+        #expect(r.repair(lines) == ["file first finally", "payoff Redis Starlette Sundeep fluency"])
+    }
 }
