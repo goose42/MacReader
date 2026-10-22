@@ -24,9 +24,12 @@ enum CodeLigatureDecoder {
         guard !glyphs.isEmpty, let provider = CGDataProvider(data: data as CFData), let cgFont = CGFont(provider) else { return [:] }
         let font = CTFontCreateWithGraphicsFont(cgFont, 100, nil, nil)
 
+        // Only fonts with an empty glyph besides the space are built this way, which is cheap to check.
+        guard let spacer = glyphs.keys.filter({ code in
+            code != spaceCode && (CTFontCreatePathForGlyph(font, CGGlyph(glyphs[code]!), nil)?.isEmpty ?? true)
+        }).min(), let spacerText = character(forCode: spacer) else { return [:] }
+
         let fingerprints = glyphs.mapValues { GlyphFingerprint(glyph: CGGlyph($0), in: font) }
-        guard let spacer = glyphs.keys.filter({ $0 != spaceCode && fingerprints[$0] == .some(nil) }).min(),
-              let spacerText = character(forCode: spacer) else { return [:] }
 
         var replacements: [String: String] = [:]
         for (code, fingerprint) in fingerprints {
@@ -36,15 +39,25 @@ enum CodeLigatureDecoder {
         return replacements
     }
 
-    /// The replacements for every embedded font on `page` that has no Unicode map. A run that two fonts read
-    /// differently is dropped rather than guessed.
-    static func replacements(on page: PDFPage) -> [String: String] {
+    /// Remembers what each embedded font decodes to, since a document repeats the same few fonts on every page.
+    final class Cache {
+        fileprivate var fonts: [Data: [String: String]] = [:]
+    }
+
+    /// The replacements for every embedded font on `page`. A run that two fonts read differently is dropped rather
+    /// than guessed.
+    ///
+    /// The font's own Unicode map is no guide: Chrome writes an identity map for these fonts, which is how the
+    /// ligature came to be extracted as punctuation in the first place.
+    static func replacements(on page: PDFPage, cache: Cache = Cache()) -> [String: String] {
         guard let pageRef = page.pageRef else { return [:] }
         var merged: [String: String] = [:]
         var conflicting: Set<String> = []
         for (_, font) in PDFPageResources.entries("Font", on: pageRef) {
             guard let data = embeddedTrueType(font) else { continue }
-            for (run, text) in replacements(forFont: data) {
+            let fontReplacements = cache.fonts[data] ?? replacements(forFont: data)
+            cache.fonts[data] = fontReplacements
+            for (run, text) in fontReplacements {
                 if let existing = merged[run], existing != text { conflicting.insert(run) }
                 merged[run] = text
             }
@@ -53,13 +66,11 @@ enum CodeLigatureDecoder {
         return merged
     }
 
-    /// The font file of a simple TrueType font that carries no `ToUnicode` map, whose text PDFKit can only guess at.
+    /// The font file of a simple TrueType font, if the PDF embeds one.
     private static func embeddedTrueType(_ font: CGPDFDictionaryRef) -> Data? {
-        var toUnicode: CGPDFStreamRef?
         var descriptor: CGPDFDictionaryRef?
         var file: CGPDFStreamRef?
-        guard !CGPDFDictionaryGetStream(font, "ToUnicode", &toUnicode),
-              CGPDFDictionaryGetDictionary(font, "FontDescriptor", &descriptor), let descriptor,
+        guard CGPDFDictionaryGetDictionary(font, "FontDescriptor", &descriptor), let descriptor,
               CGPDFDictionaryGetStream(descriptor, "FontFile2", &file), let file else { return nil }
         var format = CGPDFDataFormat.raw
         return CGPDFStreamCopyData(file, &format) as Data?

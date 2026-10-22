@@ -128,8 +128,9 @@ enum PDFFixtures {
     }
 
     /// One page showing `text` in an embedded simple TrueType font with MacRoman encoding and no ToUnicode map, the
-    /// way Chrome embeds subset fonts. Written by hand because Core Graphics always adds a Unicode map.
-    static func makeEmbeddedFontPDF(font: Data, text: String) -> Data {
+    /// way Chrome embeds subset fonts. Written by hand because Core Graphics always adds a Unicode map. With
+    /// `withUnicodeMap`, adds the identity `ToUnicode` range Chrome writes for ligature fonts, which is no more correct.
+    static func makeEmbeddedFontPDF(font: Data, text: String, withUnicodeMap: Bool = false) -> Data {
         var pdf = Data("%PDF-1.4\n".utf8)
         var offsets: [Int] = []
         func add(_ body: Data) {
@@ -146,9 +147,13 @@ enum PDFFixtures {
         add(Data("<< /Type /Pages /Kids [3 0 R] /Count 1 >>".utf8))
         add(Data("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".utf8))
         add(Data("<< /Length \(content.utf8.count) >>\nstream\n\(content)\nendstream".utf8))
-        add(Data("<< /Type /Font /Subtype /TrueType /BaseFont /AAAABB+JetBrainsMono-Regular /FirstChar 32 /LastChar 43 /Widths [\(Array(repeating: "600", count: 12).joined(separator: " "))] /FontDescriptor 6 0 R /Encoding /MacRomanEncoding >>".utf8))
+        add(Data("<< /Type /Font /Subtype /TrueType /BaseFont /AAAABB+JetBrainsMono-Regular /FirstChar 32 /LastChar 43 /Widths [\(Array(repeating: "600", count: 12).joined(separator: " "))] /FontDescriptor 6 0 R /Encoding /MacRomanEncoding\(withUnicodeMap ? " /ToUnicode 8 0 R" : "") >>".utf8))
         add(Data("<< /Type /FontDescriptor /FontName /AAAABB+JetBrainsMono-Regular /Flags 5 /FontBBox [0 0 600 800] /ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 700 /StemV 80 /FontFile2 7 0 R >>".utf8))
         add(Data("<< /Length \(font.count) >>\nstream\n".utf8) + font + Data("\nendstream".utf8))
+        if withUnicodeMap {
+            let cmap = "/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /Adobe-Identity-UCS def /CMapType 2 def 1 begincodespacerange <00><FF> endcodespacerange 1 beginbfrange <21><2b><0021> endbfrange endcmap CMapName currentdict /CMap defineresource pop end end"
+            add(Data("<< /Length \(cmap.utf8.count) >>\nstream\n\(cmap)\nendstream".utf8))
+        }
 
         let xref = pdf.count
         pdf.append(Data("xref\n0 \(offsets.count + 1)\n0000000000 65535 f \n".utf8))

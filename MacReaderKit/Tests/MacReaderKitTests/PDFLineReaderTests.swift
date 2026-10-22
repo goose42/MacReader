@@ -40,4 +40,11 @@ struct PDFLineReaderTests {
         let lines = PDFLineReader.lines(in: try #require(PDFDocument(data: data)))
         #expect(lines.map(\.text) == ["--> __ /> =="])
     }
+
+    @Test func restoresCodeLigaturesEvenWhenTheFontHasAnIdentityUnicodeMap() throws {
+        let data = PDFFixtures.makeEmbeddedFontPDF(
+            font: LigatureFontFixture.jetBrainsMonoSubset, text: "!!% !\" !$ !+", withUnicodeMap: true)
+        let lines = PDFLineReader.lines(in: try #require(PDFDocument(data: data)))
+        #expect(lines.map(\.text) == ["--> __ /> =="])
+    }
 }

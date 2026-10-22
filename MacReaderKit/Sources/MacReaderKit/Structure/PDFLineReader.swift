@@ -5,9 +5,10 @@ import PDFKit
 enum PDFLineReader {
     static func lines(in document: PDFDocument) -> [TextLine] {
         var result: [TextLine] = []
+        let fontCache = CodeLigatureDecoder.Cache()
         for pageIndex in 0..<document.pageCount {
             guard let page = document.page(at: pageIndex), let attributed = page.attributedString else { continue }
-            let ligatures = CodeLigatureDecoder.replacements(on: page)
+            let ligatures = CodeLigatureDecoder.replacements(on: page, cache: fontCache)
             var location = 0
             for line in attributed.string.components(separatedBy: "\n") {
                 defer { location += (line as NSString).length + 1 }
