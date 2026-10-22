@@ -93,4 +93,18 @@ enum PDFFixtures {
         context.closePDF()
         return data as Data
     }
+
+    /// One page with a grey rounded-rectangle fill, which PDF writes as curves rather than a `re` rectangle.
+    static func makeRoundedBoxPDF(_ rect: CGRect) -> Data {
+        let data = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let context = CGContext(consumer: CGDataConsumer(data: data)!, mediaBox: &box, nil)!
+        context.beginPDFPage(nil)
+        context.setFillColor(CGColor(gray: 0.9, alpha: 1))
+        context.addPath(CGPath(roundedRect: rect, cornerWidth: 8, cornerHeight: 8, transform: nil))
+        context.fillPath()
+        context.endPDFPage()
+        context.closePDF()
+        return data as Data
+    }
 }

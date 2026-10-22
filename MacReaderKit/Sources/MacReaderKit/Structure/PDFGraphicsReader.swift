@@ -37,11 +37,26 @@ enum PDFGraphicsReader {
         var ctm = CGAffineTransform.identity
         var saved: [CGAffineTransform] = []
         var path: [CGRect] = []
+        /// Bounds of the subpath being drawn with move/line/curve operators.
+        var subpath: CGRect?
         var rects: [CGRect] = []
         var images: [CGRect] = []
         let imageNames: Set<String>
 
         init(images: Set<String>) { imageNames = images }
+
+        func extend(by points: [CGFloat]) {
+            for index in stride(from: 0, to: points.count - 1, by: 2) {
+                let point = CGPoint(x: points[index], y: points[index + 1]).applying(ctm)
+                let single = CGRect(origin: point, size: .zero)
+                subpath = subpath.map { $0.union(single) } ?? single
+            }
+        }
+
+        func closeSubpath() {
+            if let subpath { path.append(subpath) }
+            subpath = nil
+        }
     }
 
     private static func state(_ info: UnsafeMutableRawPointer?) -> Scan {
@@ -76,17 +91,43 @@ enum PDFGraphicsReader {
         CGPDFOperatorTableSetCallback(table, "re") { scanner, info in
             guard let r = PDFGraphicsReader.numbers(scanner, 4) else { return }
             let scan = PDFGraphicsReader.state(info)
+            scan.closeSubpath()
             scan.path.append(CGRect(x: r[0], y: r[1], width: r[2], height: r[3]).applying(scan.ctm))
+        }
+        CGPDFOperatorTableSetCallback(table, "m") { scanner, info in
+            guard let p = PDFGraphicsReader.numbers(scanner, 2) else { return }
+            let scan = PDFGraphicsReader.state(info)
+            scan.closeSubpath()
+            scan.extend(by: p)
+        }
+        CGPDFOperatorTableSetCallback(table, "l") { scanner, info in
+            guard let p = PDFGraphicsReader.numbers(scanner, 2) else { return }
+            PDFGraphicsReader.state(info).extend(by: p)
+        }
+        CGPDFOperatorTableSetCallback(table, "c") { scanner, info in
+            guard let p = PDFGraphicsReader.numbers(scanner, 6) else { return }
+            PDFGraphicsReader.state(info).extend(by: p)
+        }
+        for curve in ["v", "y"] {
+            CGPDFOperatorTableSetCallback(table, curve) { scanner, info in
+                guard let p = PDFGraphicsReader.numbers(scanner, 4) else { return }
+                PDFGraphicsReader.state(info).extend(by: p)
+            }
         }
         for paint in ["f", "F", "f*", "B", "B*", "b", "b*", "S", "s"] {
             CGPDFOperatorTableSetCallback(table, paint) { _, info in
                 let scan = PDFGraphicsReader.state(info)
+                scan.closeSubpath()
                 scan.rects += scan.path
                 scan.path = []
             }
         }
         // Clipping paths end in `n` and must not count as shapes.
-        CGPDFOperatorTableSetCallback(table, "n") { _, info in PDFGraphicsReader.state(info).path = [] }
+        CGPDFOperatorTableSetCallback(table, "n") { _, info in
+            let scan = PDFGraphicsReader.state(info)
+            scan.path = []
+            scan.subpath = nil
+        }
         CGPDFOperatorTableSetCallback(table, "Do") { scanner, info in
             var name: UnsafePointer<CChar>?
             guard CGPDFScannerPopName(scanner, &name), let name else { return }

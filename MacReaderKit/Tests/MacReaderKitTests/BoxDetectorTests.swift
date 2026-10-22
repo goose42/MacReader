@@ -42,4 +42,15 @@ struct BoxDetectorTests {
         let photo = CGRect(x: 72, y: 300, width: 300, height: 200)
         #expect(BoxDetector.figureFrames(from: [logo, scan, photo], pageSize: page) == [photo])
     }
+
+    @Test func mergesShortPerLineFillsThatAreTallEnoughTogether() {
+        let lines = (0..<3).map { CGRect(x: 72, y: 500 + CGFloat($0) * 10, width: 300, height: 10) }
+        #expect(BoxDetector.boxes(from: lines, pageSize: page) == [CGRect(x: 72, y: 500, width: 300, height: 30)])
+    }
+
+    @Test func doesNotTurnATablesBorderRulesIntoABox() {
+        let rules = [500, 520, 540, 560].map { CGRect(x: 72, y: CGFloat($0), width: 300, height: 1.5) }
+            + [72, 372].map { CGRect(x: CGFloat($0), y: 500, width: 1.5, height: 61.5) }
+        #expect(BoxDetector.boxes(from: rules, pageSize: page).isEmpty)
+    }
 }

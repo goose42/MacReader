@@ -5,6 +5,8 @@ import CoreGraphics
 enum BoxDetector {
     private static let minWidth: CGFloat = 60
     private static let minHeight: CGFloat = 14
+    /// Anything thinner than this is a rule or border line, not the edge of a box.
+    private static let minThickness: CGFloat = 3
     private static let maxPageCoverage: CGFloat = 0.85
     /// Fills closer than this read as one block (a code box painted a line at a time leaves hairline gaps).
     private static let mergeGap: CGFloat = 3
@@ -23,7 +25,7 @@ enum BoxDetector {
     static func boxes(from rects: [CGRect], pageSize: CGSize) -> [CGRect] {
         let pageArea = pageSize.width * pageSize.height
         var boxes = rects.map(\.standardized).filter { rect in
-            rect.width >= minWidth && rect.height >= minHeight && rect.width * rect.height < pageArea * maxPageCoverage
+            min(rect.width, rect.height) >= minThickness && rect.width * rect.height < pageArea * maxPageCoverage
         }
 
         var merged = true
@@ -41,6 +43,8 @@ enum BoxDetector {
                 }
             }
         }
+        // Size is judged after merging, since a box painted one short line at a time is only tall as a whole.
+        boxes = boxes.filter { $0.width >= minWidth && $0.height >= minHeight }
         return boxes.sorted { $0.maxY != $1.maxY ? $0.maxY > $1.maxY : $0.minX < $1.minX }
     }
 }

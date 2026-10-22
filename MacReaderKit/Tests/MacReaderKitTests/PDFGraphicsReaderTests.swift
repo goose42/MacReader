@@ -24,4 +24,10 @@ struct PDFGraphicsReaderTests {
         #expect(graphics.rects.isEmpty)
         #expect(graphics.images.isEmpty)
     }
+
+    @Test func findsRoundedAndFreeformPathsByTheirBounds() throws {
+        let pdf = try #require(PDFDocument(data: PDFFixtures.makeRoundedBoxPDF(PDFFixtures.visualBox)))
+        let graphics = try #require(PDFGraphicsReader.graphics(in: pdf).first)
+        #expect(graphics.rects.contains { near($0, PDFFixtures.visualBox) })
+    }
 }
