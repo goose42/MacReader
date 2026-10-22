@@ -25,32 +25,103 @@ enum StructureBuilder {
         var lines: [TextLine]
     }
 
-    static func build(lines: [TextLine], fallbackTitle: String, outline: [OutlineEntry] = []) -> ReaderDocument {
-        guard !lines.isEmpty else { return ReaderDocument(title: fallbackTitle, blocks: []) }
+    /// Text inside a box becomes a callout and figures become image blocks; both are placed where they sit in
+    /// reading order, splitting a paragraph if one runs past them. Everything else flows as before.
+    static func build(
+        lines allLines: [TextLine], fallbackTitle: String, outline: [OutlineEntry] = [],
+        boxes: [PageBox] = [], figures: [Figure] = []
+    ) -> ReaderDocument {
+        guard !allLines.isEmpty else { return ReaderDocument(title: fallbackTitle, blocks: []) }
+
+        var allLines = allLines
+        for index in allLines.indices { allLines[index].sequence = index }
+        let (lines, visuals) = separateVisuals(allLines, boxes: boxes, figures: figures)
 
         var title = fallbackTitle
-        let segments: [Segment]
-        if outline.isEmpty {
-            let result = segmentsBySize(lines)
-            segments = result.segments
-            if let titleText = result.title { title = titleText }
-        } else {
-            segments = segmentsByOutline(lines, outline)
+        var segments: [Segment] = []
+        if !lines.isEmpty {
+            if outline.isEmpty {
+                let result = segmentsBySize(lines)
+                segments = result.segments
+                if let titleText = result.title { title = titleText }
+            } else {
+                segments = segmentsByOutline(lines, outline)
+            }
         }
 
         var blocks: [ReaderDocument.Block] = []
         func append(_ kind: ReaderDocument.Block.Kind, _ text: String) {
-            guard !text.isEmpty else { return }
+            if case .image = kind {} else { guard !text.isEmpty else { return } }
             blocks.append(.init(id: blocks.count, kind: kind, text: text))
+        }
+        var pending = visuals.sorted { $0.anchor < $1.anchor }[...]
+        func appendVisuals(before sequence: Int) {
+            while let visual = pending.first, visual.anchor <= sequence {
+                append(visual.kind, visual.text)
+                pending.removeFirst()
+            }
         }
         for segment in segments {
             switch segment {
-            case .heading(let level, let lines): append(.heading(level: level), normalized(lines))
-            case .insertedHeading(let level, let text): append(.heading(level: level), text)
-            case .body(let lines): append(.paragraph, normalized(lines))
+            case .heading(let level, let lines):
+                if let first = lines.first { appendVisuals(before: first.sequence) }
+                append(.heading(level: level), normalized(lines))
+            case .insertedHeading(let level, let text):
+                append(.heading(level: level), text)
+            case .body(var lines):
+                // A box or figure can land mid-paragraph, which then continues after it.
+                while let visual = pending.first, let last = lines.last, visual.anchor <= last.sequence {
+                    let before = lines.prefix { $0.sequence < visual.anchor }
+                    if !before.isEmpty { append(.paragraph, normalized(Array(before))) }
+                    append(visual.kind, visual.text)
+                    pending.removeFirst()
+                    lines.removeFirst(before.count)
+                }
+                append(.paragraph, normalized(lines))
             }
         }
+        appendVisuals(before: Int.max)
         return ReaderDocument(title: title, blocks: HeadingNumbering.apply(to: blocks))
+    }
+
+    // MARK: - Boxes and figures
+
+    private struct Visual {
+        let anchor: Int
+        let kind: ReaderDocument.Block.Kind
+        let text: String
+    }
+
+    /// Splits off the lines that sit inside a box, returning the remaining flow and a visual for every box with
+    /// text and every figure. A visual's anchor is the sequence number of the line it should appear before.
+    private static func separateVisuals(
+        _ lines: [TextLine], boxes: [PageBox], figures: [Figure]
+    ) -> (flow: [TextLine], visuals: [Visual]) {
+        var members: [[TextLine]] = Array(repeating: [], count: boxes.count)
+        var flow: [TextLine] = []
+        for line in lines {
+            let center = CGPoint(x: line.bounds.midX, y: line.bounds.midY)
+            if line.bounds != .zero,
+               let index = boxes.firstIndex(where: { $0.pageIndex == line.pageIndex && $0.rect.contains(center) }) {
+                members[index].append(line)
+            } else {
+                flow.append(line)
+            }
+        }
+
+        var visuals: [Visual] = []
+        for boxLines in members where !boxLines.isEmpty {
+            visuals.append(Visual(anchor: boxLines[0].sequence, kind: .callout, text: normalized(boxLines)))
+        }
+        for figure in figures {
+            let below = flow.first {
+                ($0.pageIndex == figure.pageIndex && $0.bounds.midY < figure.rect.midY) || $0.pageIndex > figure.pageIndex
+            }
+            let ratio = figure.rect.height > 0 ? Double(figure.rect.width / figure.rect.height) : 1
+            visuals.append(Visual(
+                anchor: below?.sequence ?? Int.max, kind: .image(name: figure.name, aspectRatio: ratio), text: ""))
+        }
+        return (flow, visuals)
     }
 
     // MARK: - Font-size headings

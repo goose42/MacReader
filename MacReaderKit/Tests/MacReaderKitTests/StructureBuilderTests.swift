@@ -1,3 +1,4 @@
+import CoreGraphics
 import Testing
 @testable import MacReaderKit
 
@@ -104,5 +105,55 @@ struct StructureBuilderTests {
         ], fallbackTitle: "T", outline: [OutlineEntry(label: "Introduction", level: 1, pageIndex: 0)])
         #expect(doc.blocks.map(\.text) == ["Introduction", "intro body text that is long enough to be body text."])
         #expect(doc.tableOfContents == [.init(id: 0, title: "Introduction", level: 1, numbering: .init(label: "1", placement: .inline))])
+    }
+
+    // MARK: - Boxes and figures
+
+    private func at(_ text: String, y: CGFloat, page: Int = 0, size: Double = 12) -> TextLine {
+        TextLine(text: text, fontSize: size, pageIndex: page, bounds: CGRect(x: 72, y: y, width: 300, height: CGFloat(size)))
+    }
+
+    private let noteBox = PageBox(pageIndex: 0, rect: CGRect(x: 60, y: 560, width: 480, height: 100))
+
+    @Test func pullsTextInsideABoxOutOfTheFlowIntoACallout() {
+        let doc = StructureBuilder.build(lines: [
+            at("Before the box and some more words.", y: 700),
+            at("Boxed note", y: 620), at("continues here.", y: 600),
+            at("After the box and some more words.", y: 400),
+        ], fallbackTitle: "T", boxes: [noteBox])
+        #expect(doc.blocks.map(\.kind) == [.paragraph, .callout, .paragraph])
+        #expect(doc.blocks.map(\.text) == [
+            "Before the box and some more words.", "Boxed note continues here.", "After the box and some more words.",
+        ])
+    }
+
+    @Test func ignoresABoxThatHoldsNoText() {
+        let doc = StructureBuilder.build(lines: [at("Only body text here.", y: 700)], fallbackTitle: "T", boxes: [noteBox])
+        #expect(doc.blocks.map(\.kind) == [.paragraph])
+    }
+
+    @Test func placesAFigureWhereItSitsBetweenTheLines() {
+        let figure = Figure(pageIndex: 0, rect: CGRect(x: 72, y: 380, width: 200, height: 100), name: "p1-1.png")
+        let doc = StructureBuilder.build(lines: [
+            at("Above the figure, words.", y: 700), at("Below the figure, words.", y: 300),
+        ], fallbackTitle: "T", figures: [figure])
+        #expect(doc.blocks.map(\.kind) == [.paragraph, .image(name: "p1-1.png", aspectRatio: 2), .paragraph])
+        #expect(doc.imageNames == ["p1-1.png"])
+    }
+
+    @Test func putsAFigureAfterTheLastLineWhenNothingFollowsIt() {
+        let figure = Figure(pageIndex: 0, rect: CGRect(x: 72, y: 100, width: 100, height: 100), name: "p1-1.png")
+        let doc = StructureBuilder.build(lines: [at("Only text on the page.", y: 700)], fallbackTitle: "T", figures: [figure])
+        #expect(doc.blocks.map(\.kind) == [.paragraph, .image(name: "p1-1.png", aspectRatio: 1)])
+    }
+
+    @Test func keepsBoxedLinesOutOfHeadingDetection() {
+        let doc = StructureBuilder.build(lines: [
+            at("Body text of the document goes here.", y: 700),
+            at("Big boxed words", y: 620, size: 30),
+            at("More body text of the document goes here.", y: 400),
+        ], fallbackTitle: "T", boxes: [noteBox])
+        #expect(doc.tableOfContents.isEmpty)
+        #expect(doc.blocks.map(\.kind) == [.paragraph, .callout, .paragraph])
     }
 }
