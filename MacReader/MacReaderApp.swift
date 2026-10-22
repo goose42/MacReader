@@ -6,6 +6,7 @@ struct MacReaderApp: App {
     @State private var library = LibraryViewModel()
     @State private var isChoosingLibrary = false
     @State private var isAddingPDF = false
+    @AppStorage("readerColumnWidth") private var columnWidth = ReaderColumnWidth.narrow
     @FocusedValue(\.sentenceNavigation) private var sentenceNavigation
 
     var body: some Scene {
@@ -20,6 +21,11 @@ struct MacReaderApp: App {
                 Button("Choose Library Folder…") { isChoosingLibrary = true }
                     .keyboardShortcut("o", modifiers: [.command, .shift])
             }
+            CommandGroup(before: .toolbar) {
+                columnWidthToggle(.narrow, shortcut: "1")
+                columnWidthToggle(.wide, shortcut: "2")
+                Divider()
+            }
             CommandMenu("Go") {
                 Button("Next Sentence") { sentenceNavigation?.next() }
                     .keyboardShortcut(.downArrow, modifiers: [])
@@ -29,5 +35,14 @@ struct MacReaderApp: App {
                     .disabled(sentenceNavigation == nil)
             }
         }
+    }
+
+    private func columnWidthToggle(_ width: ReaderColumnWidth, shortcut: KeyEquivalent) -> some View {
+        Toggle(
+            "\(width.title) Column",
+            systemImage: width.systemImage,
+            isOn: Binding(get: { columnWidth == width }, set: { _ in columnWidth = width })
+        )
+        .keyboardShortcut(shortcut, modifiers: [.command, .option])
     }
 }

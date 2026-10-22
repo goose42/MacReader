@@ -6,19 +6,24 @@ struct ReaderView: View {
     let document: ReaderDocument
     /// False while the sidebar has keyboard focus, so its arrow keys keep moving the selection.
     let stepsWithArrowKeys: Bool
+    /// Where a figure's image file lives, or nil if it is missing.
+    let imageURL: (String) -> URL?
     @AppStorage("readerFontSize") private var fontSize = 20.0
+    @AppStorage("readerColumnWidth") private var columnWidth = ReaderColumnWidth.narrow
     @State private var isShowingContents = false
     @State private var navigator: SentenceNavigator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
-    init(document: ReaderDocument, stepsWithArrowKeys: Bool = true) {
+    init(document: ReaderDocument, stepsWithArrowKeys: Bool = true, imageURL: @escaping (String) -> URL?) {
         self.document = document
         self.stepsWithArrowKeys = stepsWithArrowKeys
+        self.imageURL = imageURL
         _navigator = State(initialValue: SentenceNavigator(document: document))
     }
 
     var body: some View {
+        let sectionBreaks = document.sectionBreaks
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: fontSize * 0.9) {
@@ -27,12 +32,18 @@ struct ReaderView: View {
                         .padding(.bottom, fontSize * 0.5)
                         .accessibilityAddTraits(.isHeader)
                     ForEach(document.blocks) { block in
-                        blockView(block).id(block.id)
+                        VStack(alignment: .leading, spacing: fontSize * 0.9) {
+                            if sectionBreaks.contains(block.id) {
+                                Divider().padding(.top, fontSize * 1.2)
+                            }
+                            blockView(block)
+                        }
+                        .id(block.id)
                     }
                 }
                 .textSelection(.enabled)
-                .frame(maxWidth: 680, alignment: .leading)
-                .padding(.horizontal, 32)
+                .frame(maxWidth: columnWidth.maxWidth ?? .infinity, alignment: .leading)
+                .padding(.horizontal, columnWidth.horizontalPadding)
                 .padding(.vertical, 40)
                 .frame(maxWidth: .infinity)
             }
@@ -55,6 +66,13 @@ struct ReaderView: View {
                     contentsButton(scrollTo: { id in
                         withAnimation { proxy.scrollTo(id, anchor: .top) }
                     })
+                    Picker("Column Width", selection: $columnWidth.animation()) {
+                        ForEach(ReaderColumnWidth.allCases) { width in
+                            Label(width.title, systemImage: width.systemImage).tag(width)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .help("Set text in a narrow column or across the whole window")
                     Button("Smaller Text", systemImage: "textformat.size.smaller") { fontSize = max(14, fontSize - 2) }
                         .keyboardShortcut("-")
                     Button("Larger Text", systemImage: "textformat.size.larger") { fontSize = min(36, fontSize + 2) }
@@ -68,14 +86,26 @@ struct ReaderView: View {
     private func blockView(_ block: ReaderDocument.Block) -> some View {
         switch block.kind {
         case .heading(let level):
-            Text(highlighted(block))
-                .font(.system(size: fontSize * headingScale(level), weight: .bold, design: .serif))
+            headingView(block, font: .system(size: fontSize * headingScale(level), weight: .bold, design: .serif))
                 .padding(.top, fontSize * 0.6)
+                .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isHeader)
         case .paragraph:
             Text(highlighted(block))
                 .font(.system(size: fontSize, design: .serif))
                 .lineSpacing(fontSize * 0.4)
+        case .callout:
+            // Boxes that keep the PDF's line breaks are code or tabular, so they get a monospaced face to keep columns and indents aligned.
+            Text(block.text)
+                .font(.system(size: fontSize * 0.85, design: block.text.contains("\n") ? .monospaced : .default))
+                .lineSpacing(fontSize * 0.3)
+                .padding(fontSize * 0.8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
+                .accessibilityLabel("Boxed text. \(block.text)")
+        case .image(let name, let aspectRatio):
+            FigureView(url: imageURL(name), aspectRatio: aspectRatio)
         case .footnote(let marker):
             HStack(alignment: .firstTextBaseline, spacing: fontSize * 0.5) {
                 Text(marker).foregroundStyle(.secondary)
@@ -88,6 +118,27 @@ struct ReaderView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Footnote \(marker)")
             .accessibilityValue(block.text)
+        case .table(let table):
+            TableView(table: table, fontSize: fontSize)
+        }
+    }
+
+    @ViewBuilder
+    private func headingView(_ block: ReaderDocument.Block, font: Font) -> some View {
+        switch block.numbering {
+        case nil:
+            Text(highlighted(block)).font(font)
+        case let numbering? where numbering.placement == .eyebrow:
+            VStack(alignment: .leading, spacing: fontSize * 0.2) {
+                Text(numbering.label.uppercased())
+                    .font(.subheadline.weight(.semibold))
+                    .tracking(1)
+                    .foregroundStyle(.secondary)
+                Text(highlighted(block)).font(font)
+            }
+        case let numbering?:
+            (Text(numbering.label).monospacedDigit().foregroundStyle(.secondary) + Text(" ") + Text(highlighted(block)))
+                .font(font)
         }
     }
 
@@ -131,6 +182,68 @@ struct ReaderView: View {
     }
 }
 
+/// A table from the PDF: columns share the width, the header row is set off, and rows are separated by hairlines.
+private struct TableView: View {
+    let table: ReaderDocument.Table
+    let fontSize: Double
+
+    private var columnCount: Int { table.rows.map(\.count).max() ?? 0 }
+
+    var body: some View {
+        Grid(alignment: .topLeading, horizontalSpacing: fontSize * 0.9, verticalSpacing: 0) {
+            ForEach(table.rows.indices, id: \.self) { row in
+                if row > 0 { Divider().gridCellUnsizedAxes(.horizontal) }
+                GridRow {
+                    ForEach(0..<columnCount, id: \.self) { column in
+                        cell(table.rows[row].indices.contains(column) ? table.rows[row][column] : "", isHeader: table.hasHeader && row == 0)
+                    }
+                }
+                .background(table.hasHeader && row == 0 ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Table, \(table.rows.count) rows, \(columnCount) columns")
+    }
+
+    private func cell(_ text: String, isHeader: Bool) -> some View {
+        Text(text)
+            .font(.system(size: fontSize * 0.85, weight: isHeader ? .semibold : .regular))
+            .lineSpacing(fontSize * 0.2)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, fontSize * 0.6)
+            .padding(.vertical, fontSize * 0.45)
+            .accessibilityAddTraits(isHeader ? .isHeader : [])
+    }
+}
+
+/// A picture lifted from the PDF, framed so it reads as separate from the text around it.
+private struct FigureView: View {
+    let url: URL?
+    let aspectRatio: Double
+
+    var body: some View {
+        if let url, let image = NSImage(contentsOf: url) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(aspectRatio, contentMode: .fit)
+                // Figures are rendered at 2x, so half the pixel width is their natural size in points.
+                .frame(maxWidth: image.size.width / 2)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel("Image from the document")
+        } else {
+            Label("Image unavailable", systemImage: "photo")
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 80)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+}
+
 private struct ContentsList: View {
     let entries: [ReaderDocument.TOCEntry]
     let select: (Int) -> Void
@@ -140,7 +253,7 @@ private struct ContentsList: View {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(entries) { entry in
                     Button { select(entry.id) } label: {
-                        Text(entry.title)
+                        title(of: entry)
                             .font(entry.level == 1 ? .body.weight(.semibold) : .body)
                             .foregroundStyle(entry.level == 1 ? .primary : .secondary)
                             .lineLimit(2)
@@ -158,5 +271,10 @@ private struct ContentsList: View {
         }
         .frame(width: 320)
         .frame(maxHeight: 420)
+    }
+
+    private func title(of entry: ReaderDocument.TOCEntry) -> Text {
+        guard let numbering = entry.numbering else { return Text(entry.title) }
+        return Text(numbering.label).monospacedDigit().foregroundStyle(.secondary) + Text(" \(entry.title)")
     }
 }

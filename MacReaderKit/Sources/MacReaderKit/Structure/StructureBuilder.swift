@@ -14,6 +14,10 @@ enum StructureBuilder {
     private static let headingScale = 1.25
     private static let maxLevel = 3
     private static let titlePages = 2
+    private static let minBoxLines = 2
+    private static let minSingleLineBoxWidth: CGFloat = 300
+    /// Lines of a wrapped paragraph run close to the full width of their box.
+    private static let proseFill: CGFloat = 0.8
 
     private enum Segment {
         case heading(level: Int, lines: [TextLine])
@@ -32,25 +36,43 @@ enum StructureBuilder {
         var lines: [TextLine]
     }
 
-    static func build(lines: [TextLine], fallbackTitle: String, outline: [OutlineEntry] = []) -> ReaderDocument {
-        guard !lines.isEmpty else { return ReaderDocument(title: fallbackTitle, blocks: []) }
+    /// Text inside a box becomes a callout and figures become image blocks; both are placed where they sit in
+    /// reading order, splitting a paragraph if one runs past them. Everything else flows as before.
+    static func build(
+        lines allLines: [TextLine], fallbackTitle: String, outline: [OutlineEntry] = [],
+        boxes: [PageBox] = [], figures: [Figure] = [], tables: [TableGrid] = []
+    ) -> ReaderDocument {
+        guard !allLines.isEmpty else { return ReaderDocument(title: fallbackTitle, blocks: []) }
+
+        var allLines = allLines
+        for index in allLines.indices { allLines[index].sequence = index }
+        let (lines, visuals) = separateVisuals(allLines, boxes: boxes, figures: figures, tables: tables)
 
         let (bodyLines, notes) = FootnoteDetector.split(lines, bodySize: FontStatistics.bodySize(of: lines))
 
         var title = fallbackTitle
-        let segments: [Placed]
-        if outline.isEmpty {
-            let result = segmentsBySize(bodyLines)
-            segments = result.segments
-            if let titleText = result.title { title = titleText }
-        } else {
-            segments = segmentsByOutline(bodyLines, outline)
+        var segments: [Placed] = []
+        if !bodyLines.isEmpty {
+            if outline.isEmpty {
+                let result = segmentsBySize(bodyLines)
+                segments = result.segments
+                if let titleText = result.title { title = titleText }
+            } else {
+                segments = segmentsByOutline(bodyLines, outline)
+            }
         }
 
         var blocks: [ReaderDocument.Block] = []
         func append(_ kind: ReaderDocument.Block.Kind, _ text: String) {
-            guard !text.isEmpty else { return }
+            if case .image = kind {} else { guard !text.isEmpty else { return } }
             blocks.append(.init(id: blocks.count, kind: kind, text: text))
+        }
+        var pending = visuals.sorted { $0.anchor < $1.anchor }[...]
+        func appendVisuals(before sequence: Int) {
+            while let visual = pending.first, visual.anchor <= sequence {
+                append(visual.kind, visual.text)
+                pending.removeFirst()
+            }
         }
         var pendingNotes = notes[...]
         func appendNotes(anchoredBy start: Int?) {
@@ -62,16 +84,94 @@ enum StructureBuilder {
         for placed in segments {
             switch placed.segment {
             case .heading(let level, let lines):
+                // Footnotes close the section they belong to, after any figure that ends it.
+                if let first = lines.first { appendVisuals(before: first.sequence) }
                 appendNotes(anchoredBy: placed.start)
                 append(.heading(level: level), normalized(lines))
             case .insertedHeading(let level, let text):
                 appendNotes(anchoredBy: placed.start)
                 append(.heading(level: level), text)
-            case .body(let lines): append(.paragraph, normalized(lines))
+            case .body(var lines):
+                // A box or figure can land mid-paragraph, which then continues after it.
+                while let visual = pending.first, let last = lines.last, visual.anchor <= last.sequence {
+                    let before = lines.prefix { $0.sequence < visual.anchor }
+                    if !before.isEmpty { append(.paragraph, normalized(Array(before))) }
+                    append(visual.kind, visual.text)
+                    pending.removeFirst()
+                    lines.removeFirst(before.count)
+                }
+                append(.paragraph, normalized(lines))
             }
         }
+        appendVisuals(before: Int.max)
         appendNotes(anchoredBy: nil)
-        return ReaderDocument(title: title, blocks: blocks)
+        return ReaderDocument(title: title, blocks: HeadingNumbering.apply(to: blocks))
+    }
+
+    // MARK: - Boxes and figures
+
+    private struct Visual {
+        let anchor: Int
+        let kind: ReaderDocument.Block.Kind
+        let text: String
+    }
+
+    /// Splits off the lines that sit inside a box, returning the remaining flow and a visual for every box with
+    /// text and every figure. A visual's anchor is the sequence number of the line it should appear before.
+    private static func separateVisuals(
+        _ allLines: [TextLine], boxes: [PageBox], figures: [Figure], tables: [TableGrid]
+    ) -> (flow: [TextLine], visuals: [Visual]) {
+        var visuals: [Visual] = []
+        var lines = allLines
+        var lastTable: (visual: Int, table: ReaderDocument.Table)?
+        for grid in tables {
+            let members = lines.filter { $0.pageIndex == grid.pageIndex && grid.region.contains(CGPoint(x: $0.bounds.midX, y: $0.bounds.midY)) }
+            let previous = grid.continuesPrevious ? lastTable : nil
+            guard let table = table(for: grid, from: members, isContinuation: previous != nil),
+                  let anchor = members.map(\.sequence).min() else { continue }
+            let taken = Set(members.map(\.sequence))
+            lines.removeAll { taken.contains($0.sequence) }
+
+            if let previous {
+                let merged = joined(previous.table, continuedBy: table)
+                visuals[previous.visual] = Visual(anchor: visuals[previous.visual].anchor, kind: .table(merged), text: tabSeparated(merged))
+                lastTable = (previous.visual, merged)
+            } else {
+                visuals.append(Visual(anchor: anchor, kind: .table(table), text: tabSeparated(table)))
+                lastTable = (visuals.count - 1, table)
+            }
+        }
+
+        var members: [[TextLine]] = Array(repeating: [], count: boxes.count)
+        var flow: [TextLine] = []
+        for line in lines {
+            let center = CGPoint(x: line.bounds.midX, y: line.bounds.midY)
+            if line.bounds != .zero,
+               let index = boxes.firstIndex(where: { $0.pageIndex == line.pageIndex && $0.rect.contains(center) }) {
+                members[index].append(line)
+            } else {
+                flow.append(line)
+            }
+        }
+
+        for (box, boxLines) in zip(boxes, members) where !boxLines.isEmpty {
+            // A short highlight behind part of one line is inline emphasis (code, a marker), not a box.
+            guard boxLines.count >= minBoxLines || box.rect.width >= minSingleLineBoxWidth else {
+                flow += boxLines
+                continue
+            }
+            visuals.append(Visual(anchor: boxLines[0].sequence, kind: .callout, text: calloutText(boxLines, in: box.rect)))
+        }
+        flow.sort { $0.sequence < $1.sequence }
+        for figure in figures {
+            let below = flow.first {
+                ($0.pageIndex == figure.pageIndex && $0.bounds.midY < figure.rect.midY) || $0.pageIndex > figure.pageIndex
+            }
+            let ratio = figure.rect.height > 0 ? Double(figure.rect.width / figure.rect.height) : 1
+            visuals.append(Visual(
+                anchor: below?.sequence ?? Int.max, kind: .image(name: figure.name, aspectRatio: ratio), text: ""))
+        }
+        return (flow, visuals)
     }
 
     // MARK: - Font-size headings
@@ -182,20 +282,94 @@ enum StructureBuilder {
         let target = key(label)
         guard !target.isEmpty else { return nil }
         for start in from..<lines.count where lines[start].pageIndex == page {
-            var spelled = ""
-            for end in start..<lines.count {
-                spelled += key(lines[end].text)
-                if spelled == target { return (start, end - start + 1) }
-                if !target.hasPrefix(spelled) { break }
+            // The printed line may carry a section number the outline label leaves out ("1 Introduction").
+            for firstLine in [lines[start].text, withoutLeadingNumber(lines[start].text)] {
+                var spelled = key(firstLine)
+                var end = start
+                while true {
+                    if spelled == target { return (start, end - start + 1) }
+                    guard target.hasPrefix(spelled), end + 1 < lines.count else { break }
+                    end += 1
+                    spelled += key(lines[end].text)
+                }
             }
         }
         return nil
     }
 
+    private static func withoutLeadingNumber(_ text: String) -> String {
+        guard let match = text.firstMatch(of: /^(\d{1,2}(?:\.\d+)*\.?|[IVXLC]+\.)\s+/) else { return text }
+        return String(text[match.range.upperBound...])
+    }
+
+    /// The cells of `grid` filled from the lines that sit in it, or nil if what is there is not really a table.
+    private static func table(for grid: TableGrid, from members: [TextLine], isContinuation: Bool = false) -> ReaderDocument.Table? {
+        let edges = grid.rowEdges
+        let boundaries = grid.columnBoundaries
+        let columnCount = grid.columns.count
+        let rowCount = edges.count - 1
+        guard columnCount >= 2, rowCount >= 1, !members.isEmpty else { return nil }
+
+        var cells = Array(repeating: Array(repeating: [TextLine](), count: columnCount), count: rowCount)
+        for line in members {
+            let row = (0..<rowCount).first { line.bounds.midY <= edges[$0] && line.bounds.midY > edges[$0 + 1] } ?? rowCount - 1
+            cells[row][boundaries.filter { line.bounds.midX >= $0 }.count].append(line)
+        }
+
+        func text(_ lines: [TextLine]) -> String {
+            let ordered = lines.sorted { $0.bounds.maxY != $1.bounds.maxY ? $0.bounds.maxY > $1.bounds.maxY : $0.bounds.minX < $1.bounds.minX }
+            return normalized(ordered, dropsPageNumbers: false).replacingOccurrences(of: "\t", with: " ").replacingOccurrences(of: "\n", with: " ")
+        }
+        let kept = cells.indices.filter { row in cells[row].contains { !$0.isEmpty } }
+        let rows = kept.map { row in cells[row].map(text) }
+        let filledColumns = (0..<columnCount).filter { column in rows.contains { !$0[column].isEmpty } }
+        // The tail of a table may be a single row, which is only a table in the light of the rows before it.
+        guard rows.count >= (isContinuation ? 1 : 2), filledColumns.count >= (isContinuation ? 1 : 2) else { return nil }
+        return ReaderDocument.Table(rows: rows, hasHeader: grid.hasHeader && kept.first == 0)
+    }
+
+    private static func tabSeparated(_ table: ReaderDocument.Table) -> String {
+        table.rows.map { $0.joined(separator: "\t") }.joined(separator: "\n")
+    }
+
+    /// Appends the rows of the next page's part of a table. A part that opens with only some cells filled is the
+    /// end of the last row's wrapped text, and a header repeated at the top of the page is not a row at all.
+    private static func joined(_ table: ReaderDocument.Table, continuedBy next: ReaderDocument.Table) -> ReaderDocument.Table {
+        var rows = table.rows
+        var added = next.rows
+        if next.hasHeader, let top = added.first {
+            if top == table.rows.first {
+                added.removeFirst()
+            } else if top.contains(where: \.isEmpty), !rows.isEmpty {
+                for (column, text) in top.enumerated() where !text.isEmpty {
+                    rows[rows.count - 1][column] += rows[rows.count - 1][column].isEmpty ? text : " " + text
+                }
+                added.removeFirst()
+            }
+        }
+        return ReaderDocument.Table(rows: rows + added, hasHeader: table.hasHeader)
+    }
+
+    /// Wrapped prose reflows like any paragraph. Anything ragged (code, a table, a list) keeps the PDF's line breaks,
+    /// with each line's indentation rebuilt from how far it sits right of the least indented line.
+    private static func calloutText(_ lines: [TextLine], in box: CGRect) -> String {
+        let wrapped = lines.dropLast()
+        let isProse = wrapped.allSatisfy { $0.bounds.width >= box.width * proseFill }
+        guard lines.count > 1, !isProse else { return normalized(lines, dropsPageNumbers: false) }
+
+        let left = lines.map(\.bounds.minX).min() ?? 0
+        let widths = lines.map { $0.bounds.width / CGFloat(max($0.text.count, 1)) }.sorted()
+        let characterWidth = widths[widths.count / 2]
+        return lines.map { line in
+            let indent = characterWidth > 0 ? Int(((line.bounds.minX - left) / characterWidth).rounded()) : 0
+            return String(repeating: " ", count: max(indent, 0)) + line.text
+        }.joined(separator: "\n")
+    }
+
     // MARK: - Helpers
 
-    private static func normalized(_ lines: [TextLine]) -> String {
-        TextNormalizer.normalize(lines.map(\.text).joined(separator: "\n"))
+    private static func normalized(_ lines: [TextLine], dropsPageNumbers: Bool = true) -> String {
+        TextNormalizer.normalize(lines.map(\.text).joined(separator: "\n"), dropsPageNumbers: dropsPageNumbers)
     }
 
     private static func key(_ text: String) -> String {
