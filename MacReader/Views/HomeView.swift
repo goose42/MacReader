@@ -87,7 +87,8 @@ struct HomeView: View {
             }
         } detail: {
             if let document = library.selectedDocument {
-                ReaderView(document: document, stepsWithArrowKeys: !isSidebarFocused)
+                ReaderView(
+                    document: document, stepsWithArrowKeys: !isSidebarFocused, imageURL: { library.selectedImageURL(named: $0) })
             } else {
                 ContentUnavailableView("Select a Document", systemImage: "doc.text")
             }

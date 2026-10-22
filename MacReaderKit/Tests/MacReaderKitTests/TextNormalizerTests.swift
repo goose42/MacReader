@@ -25,4 +25,9 @@ struct TextNormalizerTests {
     @Test func trimsResult() {
         #expect(TextNormalizer.normalize("\n\n  hi  \n\n") == "hi")
     }
+
+    @Test func keepsDigitOnlyLinesWhenAskedNotToTreatThemAsPageNumbers() {
+        #expect(TextNormalizer.normalize("42", dropsPageNumbers: false) == "42")
+        #expect(TextNormalizer.normalize("42") == "")
+    }
 }

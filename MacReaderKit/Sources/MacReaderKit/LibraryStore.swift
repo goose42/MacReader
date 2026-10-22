@@ -33,7 +33,7 @@ public struct LibraryStore: Sendable {
         defer { try? fileManager.removeItem(at: staging) }
         try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
         try data.write(to: staging.appendingPathComponent("original.pdf"))
-        try write(extracted.document, into: staging)
+        try write(extracted.document, images: extracted.images, into: staging)
         try Self.encoder.encode(item).write(to: staging.appendingPathComponent("metadata.json"))
 
         try fileManager.createDirectory(at: itemsDirectory, withIntermediateDirectories: true)
@@ -59,26 +59,37 @@ public struct LibraryStore: Sendable {
         try FileManager.default.removeItem(at: folder)
     }
 
-    /// The item's structured document. Items imported before `document.json` existed are rebuilt from their
-    /// original PDF, and the result is saved so this only happens once.
+    /// The item's structured document. Items imported before `document.json` existed, or saved by an older
+    /// extraction format, are rebuilt from their original PDF, and the result is saved so this only happens once.
     public func document(for item: LibraryItem) throws -> ReaderDocument {
         let folder = folder(for: item.id)
         if let data = try? Data(contentsOf: folder.appendingPathComponent("document.json")),
-           let document = try? JSONDecoder().decode(ReaderDocument.self, from: data) {
+           let document = try? JSONDecoder().decode(ReaderDocument.self, from: data),
+           document.formatVersion >= ReaderDocument.currentFormatVersion {
             return document
         }
         let pdf = try Data(contentsOf: folder.appendingPathComponent("original.pdf"))
-        let document = try PDFTextExtractor.extract(from: pdf, fallbackTitle: item.title).document
-        try write(document, into: folder)
-        return document
+        let extracted = try PDFTextExtractor.extract(from: pdf, fallbackTitle: item.title)
+        try write(extracted.document, images: extracted.images, into: folder)
+        return extracted.document
+    }
+
+    /// Where a figure of the item's document is saved.
+    public func imageURL(for item: LibraryItem, named name: String) -> URL {
+        folder(for: item.id).appendingPathComponent("Images", isDirectory: true).appendingPathComponent(name)
     }
 
     public func text(for item: LibraryItem) throws -> String {
         try String(contentsOf: folder(for: item.id).appendingPathComponent("content.txt"), encoding: .utf8)
     }
 
-    /// Writes `document.json` and the plaintext `content.txt` derived from it.
-    private func write(_ document: ReaderDocument, into folder: URL) throws {
+    /// Writes `document.json`, the plaintext `content.txt` derived from it, and any rendered figures.
+    private func write(_ document: ReaderDocument, images: [String: Data], into folder: URL) throws {
+        if !images.isEmpty {
+            let directory = folder.appendingPathComponent("Images", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            for (name, data) in images { try data.write(to: directory.appendingPathComponent(name)) }
+        }
         try document.plainText.write(to: folder.appendingPathComponent("content.txt"), atomically: true, encoding: .utf8)
         try JSONEncoder().encode(document).write(to: folder.appendingPathComponent("document.json"), options: .atomic)
     }
