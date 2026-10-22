@@ -52,6 +52,13 @@ public struct LibraryStore: Sendable {
             .sorted { $0.dateAdded > $1.dateAdded }
     }
 
+    /// Permanently removes the item's folder (PDF, text, and metadata) from the library. Missing items are ignored.
+    public func delete(_ item: LibraryItem) throws {
+        let folder = folder(for: item.id)
+        guard FileManager.default.fileExists(atPath: folder.path) else { return }
+        try FileManager.default.removeItem(at: folder)
+    }
+
     /// The item's structured document. Items imported before `document.json` existed are rebuilt from their
     /// original PDF, and the result is saved so this only happens once.
     public func document(for item: LibraryItem) throws -> ReaderDocument {

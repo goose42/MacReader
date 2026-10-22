@@ -10,6 +10,7 @@ public final class LibraryViewModel {
     public private(set) var selectedDocument: ReaderDocument?
     public private(set) var errorMessage: String?
 
+    private var selectedItemID: LibraryItem.ID?
     private let location: LibraryLocation
     private var store: LibraryStore?
     private var scopedFolder: URL?
@@ -47,6 +48,7 @@ public final class LibraryViewModel {
 
     public func select(_ item: LibraryItem) {
         do {
+            selectedItemID = item.id
             selectedDocument = try store?.document(for: item)
         } catch {
             selectedDocument = nil
@@ -54,11 +56,23 @@ public final class LibraryViewModel {
         }
     }
 
+    public func delete(_ item: LibraryItem) {
+        do {
+            try store?.delete(item)
+            if selectedItemID == item.id { selectedDocument = nil }
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        reload()
+    }
+
     private func open(_ url: URL) {
         scopedFolder?.stopAccessingSecurityScopedResource()
         _ = url.startAccessingSecurityScopedResource()
         scopedFolder = url
         store = LibraryStore(root: url)
+        selectedItemID = nil
         selectedDocument = nil
         errorMessage = nil
         reload()

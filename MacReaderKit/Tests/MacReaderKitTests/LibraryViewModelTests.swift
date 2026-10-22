@@ -69,4 +69,45 @@ struct LibraryViewModelTests {
         #expect(second.items.count == 1)
         #expect(second.state == .loaded)
     }
+
+    @Test func deletingAnItemRemovesItFromTheLibrary() throws {
+        let model = makeViewModel()
+        model.chooseLibrary(try makeFolder())
+        model.addPDFs([try writePDF("a.pdf", pages: ["A text"]), try writePDF("b.pdf", pages: ["B text"])])
+        let doomed = model.items[0]
+
+        model.delete(doomed)
+
+        #expect(!model.items.contains { $0.id == doomed.id })
+        #expect(model.items.count == 1)
+        #expect(model.state == .loaded)
+    }
+
+    @Test func deletingTheLastItemShowsTheEmptyState() throws {
+        let model = makeViewModel()
+        model.chooseLibrary(try makeFolder())
+        model.addPDFs([try writePDF("a.pdf", pages: ["A text"])])
+        model.delete(model.items[0])
+        #expect(model.items.isEmpty)
+        #expect(model.state == .empty)
+    }
+
+    @Test func deletingTheSelectedItemClearsTheReader() throws {
+        let model = makeViewModel()
+        model.chooseLibrary(try makeFolder())
+        model.addPDFs([try writePDF("a.pdf", pages: ["Readable words"])])
+        model.select(model.items[0])
+        model.delete(model.items[0])
+        #expect(model.selectedDocument == nil)
+    }
+
+    @Test func deletingADifferentItemKeepsTheSelection() throws {
+        let model = makeViewModel()
+        model.chooseLibrary(try makeFolder())
+        model.addPDFs([try writePDF("a.pdf", pages: ["First words"]), try writePDF("b.pdf", pages: ["Second words"])])
+        let selected = model.items[0]
+        model.select(selected)
+        model.delete(model.items[1])
+        #expect(model.selectedDocument?.plainText.contains("words") == true)
+    }
 }

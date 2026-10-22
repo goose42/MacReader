@@ -83,4 +83,23 @@ struct LibraryStoreTests {
         #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("document.json").path))
         #expect(try store.text(for: item) == "Legacy body text.")
     }
+
+    @Test func deleteRemovesTheItemFolderEntirely() throws {
+        let root = try makeLibrary()
+        let store = LibraryStore(root: root)
+        let keep = try store.ingest(pdfAt: writePDF(named: "keep.pdf", pages: ["Keep me"]))
+        let drop = try store.ingest(pdfAt: writePDF(named: "drop.pdf", pages: ["Drop me"]))
+
+        try store.delete(drop)
+
+        #expect(try store.items().map(\.id) == [keep.id])
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("Items/\(drop.id.uuidString)").path))
+    }
+
+    @Test func deletingAnAlreadyMissingItemDoesNotThrow() throws {
+        let store = LibraryStore(root: try makeLibrary())
+        let item = try store.ingest(pdfAt: writePDF(named: "a.pdf", pages: ["A"]))
+        try store.delete(item)
+        try store.delete(item)
+    }
 }
