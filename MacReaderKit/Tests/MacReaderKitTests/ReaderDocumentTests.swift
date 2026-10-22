@@ -25,4 +25,31 @@ struct ReaderDocumentTests {
     @Test func plainTextSeparatesBlocksWithBlankLines() {
         #expect(sample.plainText == "Intro\n\nBody one.\n\nDetail\n\nBody two.")
     }
+
+    private let numbered = ReaderDocument(title: "Doc", blocks: [
+        .init(id: 0, kind: .heading(level: 1), text: "Intro", numbering: .init(label: "1", placement: .inline)),
+        .init(id: 1, kind: .paragraph, text: "Body."),
+        .init(id: 2, kind: .heading(level: 2), text: "Detail", numbering: .init(label: "1.1", placement: .inline)),
+        .init(id: 3, kind: .heading(level: 1), text: "Next", numbering: .init(label: "2", placement: .inline)),
+        .init(id: 4, kind: .heading(level: 1), text: "Unnumbered"),
+    ])
+
+    @Test func plainTextIncludesHeadingNumbers() {
+        #expect(numbered.plainText == "1 Intro\n\nBody.\n\n1.1 Detail\n\n2 Next\n\nUnnumbered")
+    }
+
+    @Test func tableOfContentsCarriesNumbering() {
+        #expect(numbered.tableOfContents.first?.numbering == .init(label: "1", placement: .inline))
+    }
+
+    @Test func sectionBreaksMarkShallowestNumberedHeadingsExceptTheFirstBlock() {
+        #expect(numbered.sectionBreaks == [3])
+    }
+
+    @Test func documentsWithoutAFormatVersionDecodeAsVersionOne() throws {
+        let json = #"{"title":"Old","blocks":[{"id":0,"kind":{"paragraph":{}},"text":"Hi"}]}"#
+        let decoded = try JSONDecoder().decode(ReaderDocument.self, from: Data(json.utf8))
+        #expect(decoded.formatVersion == 1)
+        #expect(ReaderDocument(title: "New", blocks: []).formatVersion == ReaderDocument.currentFormatVersion)
+    }
 }
