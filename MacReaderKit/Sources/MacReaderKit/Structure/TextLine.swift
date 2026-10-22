@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// One visual line of a PDF page with the font size it was set in.
@@ -5,11 +6,16 @@ public struct TextLine: Equatable, Sendable {
     public let text: String
     public let fontSize: Double
     public let pageIndex: Int
+    /// Where the line sits on its page, in PDF page coordinates (origin bottom-left).
+    public let bounds: CGRect
+    /// The line's position in reading order; assigned when a document is built.
+    var sequence = 0
 
-    public init(text: String, fontSize: Double, pageIndex: Int) {
+    public init(text: String, fontSize: Double, pageIndex: Int, bounds: CGRect = .zero) {
         self.text = text
         self.fontSize = fontSize
         self.pageIndex = pageIndex
+        self.bounds = bounds
     }
 }
 

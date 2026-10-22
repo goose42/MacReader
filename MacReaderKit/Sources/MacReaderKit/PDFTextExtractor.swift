@@ -16,7 +16,7 @@ public enum PDFTextExtractor {
 
         var lines = PDFLineReader.lines(in: pdf)
         let repaired = LigatureRepairer(validator: SpellCheckerValidator()).repair(lines.map(\.text))
-        lines = zip(lines, repaired).map { TextLine(text: $1, fontSize: $0.fontSize, pageIndex: $0.pageIndex) }
+        lines = zip(lines, repaired).map { TextLine(text: $1, fontSize: $0.fontSize, pageIndex: $0.pageIndex, bounds: $0.bounds) }
         lines = PrintedTOCDetector.strip(lines, bodySize: FontStatistics.bodySize(of: lines))
 
         var document = StructureBuilder.build(

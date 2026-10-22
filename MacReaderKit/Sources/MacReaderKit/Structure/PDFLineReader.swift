@@ -13,7 +13,9 @@ enum PDFLineReader {
                 let text = line.trimmingCharacters(in: .whitespaces)
                 guard !text.isEmpty, location < attributed.length else { continue }
                 let font = attributed.attribute(.font, at: location, effectiveRange: nil) as? NSFont
-                result.append(TextLine(text: text, fontSize: Double(font?.pointSize ?? 0), pageIndex: pageIndex))
+                let bounds = page.selection(for: NSRange(location: location, length: (line as NSString).length))?
+                    .bounds(for: page) ?? .zero
+                result.append(TextLine(text: text, fontSize: Double(font?.pointSize ?? 0), pageIndex: pageIndex, bounds: bounds))
             }
         }
         return result

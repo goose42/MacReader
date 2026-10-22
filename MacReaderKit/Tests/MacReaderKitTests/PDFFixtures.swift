@@ -60,4 +60,37 @@ enum PDFFixtures {
         context.closePDF()
         return data as Data
     }
+
+    /// Frames used by `makeVisualPDF`, in PDF page coordinates (origin bottom-left).
+    static let visualBox = CGRect(x: 60, y: 560, width: 480, height: 100)
+    static let visualImage = CGRect(x: 72, y: 380, width: 200, height: 100)
+
+    /// One page: a line of text, a grey box holding a line of text, a line after it, and a drawn image.
+    static func makeVisualPDF() -> Data {
+        let data = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let context = CGContext(consumer: CGDataConsumer(data: data)!, mediaBox: &box, nil)!
+        context.beginPDFPage(nil)
+        func draw(_ text: String, at point: CGPoint) {
+            let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+            let attributed = NSAttributedString(string: text, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font])
+            context.textPosition = point
+            CTLineDraw(CTLineCreateWithAttributedString(attributed), context)
+        }
+        draw("Before the box", at: CGPoint(x: 72, y: 720))
+        context.setFillColor(CGColor(gray: 0.9, alpha: 1))
+        context.fill(visualBox)
+        context.setFillColor(CGColor(gray: 0, alpha: 1))
+        draw("Boxed note", at: CGPoint(x: 80, y: 620))
+        draw("After the box", at: CGPoint(x: 72, y: 520))
+
+        let bitmap = CGContext(data: nil, width: 40, height: 20, bitsPerComponent: 8, bytesPerRow: 0,
+                               space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        bitmap.setFillColor(CGColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1))
+        bitmap.fill(CGRect(x: 0, y: 0, width: 40, height: 20))
+        context.draw(bitmap.makeImage()!, in: visualImage)
+        context.endPDFPage()
+        context.closePDF()
+        return data as Data
+    }
 }
