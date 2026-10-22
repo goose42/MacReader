@@ -1,0 +1,30 @@
+name: MacReader
+options:
+  bundleIdPrefix: com.jayanth
+  deploymentTarget:
+    macOS: "27.0"
+packages:
+  MacReaderKit:
+    path: MacReaderKit
+targets:
+  MacReader:
+    type: application
+    platform: macOS
+    sources: [MacReader]
+    dependencies:
+      - package: MacReaderKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jayanth.MacReader
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: MacReader
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+        CODE_SIGN_ENTITLEMENTS: MacReader/MacReader.entitlements
+        ENABLE_APP_SANDBOX: YES
+        ENABLE_HARDENED_RUNTIME: YES
+schemes:
+  MacReader:
+    build:
+      targets:
+        MacReader: all
