@@ -1,0 +1,36 @@
+import CoreGraphics
+
+/// Turns the rectangles a page paints into the boxes a reader would see: backgrounds, rules and specks are dropped,
+/// and fills that touch or overlap are merged.
+enum BoxDetector {
+    private static let minWidth: CGFloat = 60
+    private static let minHeight: CGFloat = 14
+    private static let maxPageCoverage: CGFloat = 0.85
+    /// Fills closer than this read as one block (a code box painted a line at a time leaves hairline gaps).
+    private static let mergeGap: CGFloat = 3
+
+    /// Boxes in reading order, top of the page first.
+    static func boxes(from rects: [CGRect], pageSize: CGSize) -> [CGRect] {
+        let pageArea = pageSize.width * pageSize.height
+        var boxes = rects.map(\.standardized).filter { rect in
+            rect.width >= minWidth && rect.height >= minHeight && rect.width * rect.height < pageArea * maxPageCoverage
+        }
+
+        var merged = true
+        while merged {
+            merged = false
+            outer: for i in boxes.indices {
+                for j in boxes.indices where j > i {
+                    if boxes[i].insetBy(dx: -mergeGap / 2, dy: -mergeGap / 2)
+                        .intersects(boxes[j].insetBy(dx: -mergeGap / 2, dy: -mergeGap / 2)) {
+                        boxes[i] = boxes[i].union(boxes[j])
+                        boxes.remove(at: j)
+                        merged = true
+                        break outer
+                    }
+                }
+            }
+        }
+        return boxes.sorted { $0.maxY != $1.maxY ? $0.maxY > $1.maxY : $0.minX < $1.minX }
+    }
+}
