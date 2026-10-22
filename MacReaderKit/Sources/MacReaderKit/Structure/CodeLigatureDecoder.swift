@@ -29,11 +29,13 @@ enum CodeLigatureDecoder {
             code != spaceCode && (CTFontCreatePathForGlyph(font, CGGlyph(glyphs[code]!), nil)?.isEmpty ?? true)
         }).min(), let spacerText = character(forCode: spacer) else { return [:] }
 
-        let fingerprints = glyphs.mapValues { GlyphFingerprint(glyph: CGGlyph($0), in: font) }
 
         var replacements: [String: String] = [:]
-        for (code, fingerprint) in fingerprints {
-            guard let fingerprint, let ligature = match(fingerprint), let codeText = character(forCode: code) else { continue }
+        for (code, glyph) in glyphs where code != spacer {
+            // A ligature is the last glyph of its run, so its outline reaches back left over the cells before it.
+            guard let path = CTFontCreatePathForGlyph(font, CGGlyph(glyph), nil), path.boundingBox.minX < 0,
+                  let fingerprint = GlyphFingerprint(glyph: CGGlyph(glyph), in: font),
+                  let ligature = match(fingerprint), let codeText = character(forCode: code) else { continue }
             replacements[String(repeating: spacerText, count: ligature.count - 1) + codeText] = ligature
         }
         return replacements
