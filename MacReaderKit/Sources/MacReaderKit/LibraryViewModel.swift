@@ -56,6 +56,12 @@ public final class LibraryViewModel {
         }
     }
 
+    /// Where a figure of the selected document is saved, or nil when nothing is selected.
+    public func selectedImageURL(named name: String) -> URL? {
+        guard let store, let item = items.first(where: { $0.id == selectedItemID }), selectedDocument != nil else { return nil }
+        return store.imageURL(for: item, named: name)
+    }
+
     public func delete(_ item: LibraryItem) {
         do {
             try store?.delete(item)

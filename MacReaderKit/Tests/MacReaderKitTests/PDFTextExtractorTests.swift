@@ -87,4 +87,28 @@ struct PDFTextExtractorTests {
         #expect(blocks[2].kind == .footnote(marker: "1"))
         #expect(blocks[1].sentences.count == 2)
     }
+
+    @Test func turnsBoxedTextIntoACalloutAndPicturesIntoRenderedImages() throws {
+        let result = try PDFTextExtractor.extract(from: PDFFixtures.makeVisualPDF())
+
+        #expect(result.document.blocks.map(\.kind) == [
+            .paragraph, .callout, .paragraph, .image(name: "p1-1.png", aspectRatio: 2),
+        ])
+        #expect(result.document.blocks[1].text == "Boxed note")
+        let png = try #require(result.images["p1-1.png"])
+        #expect(Array(png.prefix(4)) == [0x89, 0x50, 0x4E, 0x47])
+    }
+
+    @Test func turnsARuledTableIntoATableBlockWithItsCellsAndHeader() throws {
+        let result = try PDFTextExtractor.extract(from: PDFFixtures.makeRuledTablePDF())
+
+        #expect(result.document.blocks.map(\.text) == [
+            "Intro text before the table.",
+            "NAME\tROLE\tSINCE\nAda\tEngineer\t1999\nGrace\tAdmiral\t1944\nLinus\tMaintainer\t1991",
+            "Closing text after the table.",
+        ])
+        #expect(result.document.blocks.dropFirst().first?.kind == .table(.init(
+            rows: [["NAME", "ROLE", "SINCE"], ["Ada", "Engineer", "1999"], ["Grace", "Admiral", "1944"], ["Linus", "Maintainer", "1991"]],
+            hasHeader: true)))
+    }
 }

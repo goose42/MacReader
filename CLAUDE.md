@@ -16,15 +16,16 @@ A native macOS app (Swift + SwiftUI) that makes reading easier. Users pick a lib
 
 - `MacReaderKit/` is a local Swift package holding all logic (PDF extraction, text normalization, library storage, view models). Tested with Swift Testing.
 - `MacReader/` is the thin SwiftUI app target. Views stay declarative; logic belongs in MacReaderKit.
+- `Scripts/generate-ligature-table.sh` regenerates `Structure/CodeLigatureTable.swift` (outline fingerprints of JetBrains Mono's code ligatures) from the font file. PDF generators embed that font with no usable Unicode map, so ligatures like `-->` are recognised by glyph shape rather than text.
 - `project.yml` is the XcodeGen spec. The `.xcodeproj` is generated and not committed.
 
 ### Library on-disk format
 
 ```
-<UserChosenFolder>/Items/<uuid>/{original.pdf, content.txt, document.json, metadata.json}
+<UserChosenFolder>/Items/<uuid>/{original.pdf, content.txt, document.json, metadata.json, Images/}
 ```
 
-`document.json` (`ReaderDocument`) is the app-owned structure: headings, paragraphs and footnotes in reading order. Each block carries `sentences`, UTF-16 ranges the reader steps through (abbreviations like "i.e." and "Dr." don't end a sentence); footnotes are their own blocks placed at the end of their section and are not reading stops. Documents saved without `sentences` fail to decode and are rebuilt from `original.pdf`. The reader and its table of contents render from it; `content.txt` is derived plaintext. The PDF's printed contents page is detected and dropped, and ligature glyphs mis-extracted as capitals ("Dle" for "file") are repaired. Items without `document.json` are rebuilt from `original.pdf` on first open.
+`document.json` (`ReaderDocument`) is the app-owned structure: headings, paragraphs, callouts (text in a PDF box), tables, images and footnotes in reading order. Paragraphs and headings carry `sentences`, UTF-16 ranges the reader steps through one at a time (abbreviations like "i.e." and "Dr." don't end a sentence); footnotes are their own blocks placed at the end of their section, and callouts, tables, images and footnotes are not reading stops. Tables are recognised from the page's drawing: row separators drawn as one rule per column cell give the columns and rows (`TableDetector`), lines spanning several cells are cut at the column boundaries (`TableSplitter`), and a table that runs onto the next page is merged. The reader and its table of contents render from it; `content.txt` is derived plaintext. The PDF's printed contents page is detected and dropped, and ligature glyphs mis-extracted as capitals ("Dle" for "file") are repaired. Headings carry their section numbers (`numbering`), which the reader shows with a rule before each top-level numbered section. Items without `document.json`, or saved with an older `formatVersion`, are rebuilt from `original.pdf` on first open.
 
 ## Commands
 
