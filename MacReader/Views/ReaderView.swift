@@ -10,6 +10,7 @@ struct ReaderView: View {
     let imageURL: (String) -> URL?
     @AppStorage("readerFontSize") private var fontSize = 20.0
     @AppStorage("readerColumnWidth") private var columnWidth = ReaderColumnWidth.narrow
+    @AppStorage("highlightColor") private var highlightColor = HighlightColor.accent
     @State private var isShowingContents = false
     @State private var navigator: SentenceNavigator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -148,7 +149,7 @@ struct ReaderView: View {
         guard let utf16 = navigator.highlight(in: block.id),
               let range = Range(NSRange(location: utf16.lowerBound, length: utf16.count), in: text)
         else { return text }
-        text[range].backgroundColor = Color.accentColor.opacity(0.25)
+        text[range].backgroundColor = highlightColor.fill
         if differentiateWithoutColor { text[range].underlineStyle = .single }
         return text
     }

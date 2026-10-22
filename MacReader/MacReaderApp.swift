@@ -35,6 +35,7 @@ struct MacReaderApp: App {
                     .disabled(sentenceNavigation == nil)
             }
         }
+        Settings { SettingsView() }
     }
 
     private func columnWidthToggle(_ width: ReaderColumnWidth, shortcut: KeyEquivalent) -> some View {
