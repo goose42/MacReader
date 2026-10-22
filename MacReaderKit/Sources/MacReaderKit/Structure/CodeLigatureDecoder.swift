@@ -36,6 +36,35 @@ enum CodeLigatureDecoder {
         return replacements
     }
 
+    /// The replacements for every embedded font on `page` that has no Unicode map. A run that two fonts read
+    /// differently is dropped rather than guessed.
+    static func replacements(on page: PDFPage) -> [String: String] {
+        guard let pageRef = page.pageRef else { return [:] }
+        var merged: [String: String] = [:]
+        var conflicting: Set<String> = []
+        for (_, font) in PDFPageResources.entries("Font", on: pageRef) {
+            guard let data = embeddedTrueType(font) else { continue }
+            for (run, text) in replacements(forFont: data) {
+                if let existing = merged[run], existing != text { conflicting.insert(run) }
+                merged[run] = text
+            }
+        }
+        conflicting.forEach { merged[$0] = nil }
+        return merged
+    }
+
+    /// The font file of a simple TrueType font that carries no `ToUnicode` map, whose text PDFKit can only guess at.
+    private static func embeddedTrueType(_ font: CGPDFDictionaryRef) -> Data? {
+        var toUnicode: CGPDFStreamRef?
+        var descriptor: CGPDFDictionaryRef?
+        var file: CGPDFStreamRef?
+        guard !CGPDFDictionaryGetStream(font, "ToUnicode", &toUnicode),
+              CGPDFDictionaryGetDictionary(font, "FontDescriptor", &descriptor), let descriptor,
+              CGPDFDictionaryGetStream(descriptor, "FontFile2", &file), let file else { return nil }
+        var format = CGPDFDataFormat.raw
+        return CGPDFStreamCopyData(file, &format) as Data?
+    }
+
     /// Replaces every garbled run in `line`, preferring the longest run at each position.
     static func apply(_ replacements: [String: String], to line: String) -> String {
         guard !replacements.isEmpty else { return line }

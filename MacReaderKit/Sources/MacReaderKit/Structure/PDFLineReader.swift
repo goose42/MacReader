@@ -7,10 +7,11 @@ enum PDFLineReader {
         var result: [TextLine] = []
         for pageIndex in 0..<document.pageCount {
             guard let page = document.page(at: pageIndex), let attributed = page.attributedString else { continue }
+            let ligatures = CodeLigatureDecoder.replacements(on: page)
             var location = 0
             for line in attributed.string.components(separatedBy: "\n") {
                 defer { location += (line as NSString).length + 1 }
-                let text = line.trimmingCharacters(in: .whitespaces)
+                let text = CodeLigatureDecoder.apply(ligatures, to: line.trimmingCharacters(in: .whitespaces))
                 guard !text.isEmpty, location < attributed.length else { continue }
                 let font = attributed.attribute(.font, at: location, effectiveRange: nil) as? NSFont
                 let bounds = page.selection(for: NSRange(location: location, length: (line as NSString).length))?

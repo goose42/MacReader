@@ -126,4 +126,34 @@ enum PDFFixtures {
         context.closePDF()
         return data as Data
     }
+
+    /// One page showing `text` in an embedded simple TrueType font with MacRoman encoding and no ToUnicode map, the
+    /// way Chrome embeds subset fonts. Written by hand because Core Graphics always adds a Unicode map.
+    static func makeEmbeddedFontPDF(font: Data, text: String) -> Data {
+        var pdf = Data("%PDF-1.4\n".utf8)
+        var offsets: [Int] = []
+        func add(_ body: Data) {
+            offsets.append(pdf.count)
+            pdf.append(Data("\(offsets.count) 0 obj\n".utf8))
+            pdf.append(body)
+            pdf.append(Data("\nendobj\n".utf8))
+        }
+        func escaped(_ text: String) -> String {
+            text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "(", with: "\\(").replacingOccurrences(of: ")", with: "\\)")
+        }
+        let content = "BT /F1 12 Tf 72 700 Td (\(escaped(text))) Tj ET"
+        add(Data("<< /Type /Catalog /Pages 2 0 R >>".utf8))
+        add(Data("<< /Type /Pages /Kids [3 0 R] /Count 1 >>".utf8))
+        add(Data("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>".utf8))
+        add(Data("<< /Length \(content.utf8.count) >>\nstream\n\(content)\nendstream".utf8))
+        add(Data("<< /Type /Font /Subtype /TrueType /BaseFont /AAAABB+JetBrainsMono-Regular /FirstChar 32 /LastChar 43 /Widths [\(Array(repeating: "600", count: 12).joined(separator: " "))] /FontDescriptor 6 0 R /Encoding /MacRomanEncoding >>".utf8))
+        add(Data("<< /Type /FontDescriptor /FontName /AAAABB+JetBrainsMono-Regular /Flags 5 /FontBBox [0 0 600 800] /ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 700 /StemV 80 /FontFile2 7 0 R >>".utf8))
+        add(Data("<< /Length \(font.count) >>\nstream\n".utf8) + font + Data("\nendstream".utf8))
+
+        let xref = pdf.count
+        pdf.append(Data("xref\n0 \(offsets.count + 1)\n0000000000 65535 f \n".utf8))
+        for offset in offsets { pdf.append(Data(String(format: "%010d 00000 n \n", offset).utf8)) }
+        pdf.append(Data("trailer\n<< /Size \(offsets.count + 1) /Root 1 0 R >>\nstartxref\n\(xref)\n%%EOF\n".utf8))
+        return pdf
+    }
 }

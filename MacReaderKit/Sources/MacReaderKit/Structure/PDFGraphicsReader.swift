@@ -141,31 +141,13 @@ enum PDFGraphicsReader {
 
     // MARK: - Resources
 
-    /// Names of the image XObjects the page can draw, looking through inherited resources.
+    /// Names of the image XObjects the page can draw.
     private static func imageNames(on page: CGPDFPage) -> Set<String> {
-        var dictionary = page.dictionary
-        var resources: CGPDFDictionaryRef?
-        while let current = dictionary {
-            if CGPDFDictionaryGetDictionary(current, "Resources", &resources) { break }
-            var parent: CGPDFDictionaryRef?
-            dictionary = CGPDFDictionaryGetDictionary(current, "Parent", &parent) ? parent : nil
-        }
-        var xObjects: CGPDFDictionaryRef?
-        guard let resources, CGPDFDictionaryGetDictionary(resources, "XObject", &xObjects), let xObjects else { return [] }
-
-        final class Collector { var names: Set<String> = []; let xObjects: CGPDFDictionaryRef
-            init(_ x: CGPDFDictionaryRef) { xObjects = x } }
-        let collector = Collector(xObjects)
-        CGPDFDictionaryApplyBlock(xObjects, { key, object, _ in
-            var stream: CGPDFStreamRef?
+        Set(PDFPageResources.entries("XObject", on: page).compactMap { entry in
             var subtype: UnsafePointer<CChar>?
-            if CGPDFObjectGetValue(object, .stream, &stream), let stream,
-               let dict = CGPDFStreamGetDictionary(stream),
-               CGPDFDictionaryGetName(dict, "Subtype", &subtype), let subtype, String(cString: subtype) == "Image" {
-                collector.names.insert(String(cString: key))
-            }
-            return true
-        }, nil)
-        return collector.names
+            guard CGPDFDictionaryGetName(entry.dictionary, "Subtype", &subtype), let subtype,
+                  String(cString: subtype) == "Image" else { return nil }
+            return entry.name
+        })
     }
 }

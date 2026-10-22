@@ -34,4 +34,10 @@ struct PDFLineReaderTests {
         #expect(abs(spaced.bounds.minX - flat.bounds.minX - 21.6) < 2)
         #expect(abs(moved.bounds.minX - flat.bounds.minX - 28) < 2)
     }
+
+    @Test func restoresCodeLigaturesFromAnEmbeddedFontWithoutAUnicodeMap() throws {
+        let data = PDFFixtures.makeEmbeddedFontPDF(font: LigatureFontFixture.jetBrainsMonoSubset, text: "!!% !\" !$ !+")
+        let lines = PDFLineReader.lines(in: try #require(PDFDocument(data: data)))
+        #expect(lines.map(\.text) == ["--> __ /> =="])
+    }
 }
