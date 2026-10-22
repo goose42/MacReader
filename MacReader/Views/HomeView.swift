@@ -85,7 +85,7 @@ struct HomeView: View {
             }
         } detail: {
             if let document = library.selectedDocument {
-                ReaderView(document: document)
+                ReaderView(document: document) { library.selectedImageURL(named: $0) }
             } else {
                 ContentUnavailableView("Select a Document", systemImage: "doc.text")
             }

@@ -4,12 +4,20 @@ public protocol WordValidator: Sendable {
     func isValid(_ word: String) -> Bool
 }
 
-/// Repairs PDFs whose fi/ff/fl ligature glyphs were extracted as stray capitals ("Dle" for "file").
+/// Repairs PDFs whose fi/ff/fl ligature glyphs were extracted as stray characters: capitals ("Dle" for "file"),
+/// or letters and punctuation ("Zrst" for "first", "con_ict" for "conflict").
 ///
-/// Which capital stands for which ligature varies per font, so a rule is learned per document:
+/// Which character stands for which ligature varies per font, so a rule is learned per document:
 /// it is accepted when it turns misspelled words into valid ones, and rarely produces non-words.
 public struct LigatureRepairer: Sendable {
-    private static let candidates: [Character: String] = ["D": "fi", "R": "ff", "S": "fl", "E": "ffi", "F": "ffl"]
+    private static let capitals: [Character: [String]] = ["D": ["fi"], "R": ["ff"], "S": ["fl"], "E": ["ffi"], "F": ["ffl"]]
+    /// Fonts that give ligatures no Unicode value fall back on whatever character shares the glyph's code, so any of
+    /// these can stand for any common ligature.
+    private static let strays: [Character: [String]] = Dictionary(
+        uniqueKeysWithValues: "Z_'".map { ($0, ["fi", "fl", "ff", "ffi", "ffl"]) })
+    private static let candidates = capitals.merging(strays) { $1 }
+    /// Words may contain the stray characters that stand in for ligatures.
+    nonisolated(unsafe) private static let wordPattern = #/[\p{L}_']+/#
     private static let maxMissRatio = 0.3
 
     private let validator: any WordValidator
@@ -22,7 +30,7 @@ public struct LigatureRepairer: Sendable {
         let rules = learnRules(from: lines)
         guard !rules.isEmpty else { return lines }
         return lines.map { line in
-            line.replacing(#/\p{L}+/#) { match in
+            line.replacing(Self.wordPattern) { match in
                 let word = String(match.output)
                 return fix(word, rules: rules) ?? word
             }
@@ -32,20 +40,22 @@ public struct LigatureRepairer: Sendable {
     // MARK: - Learning
 
     private func learnRules(from lines: [String]) -> [Character: String] {
-        let words = Set(lines.flatMap { $0.matches(of: #/\p{L}+/#).map { String($0.output) } })
+        let words = Set(lines.flatMap { $0.matches(of: Self.wordPattern).map { String($0.output) } })
             .filter(isSuspect)
 
-        var tallies: [(capital: Character, hits: Int, misses: Int)] = []
-        for (capital, replacement) in Self.candidates {
-            var hits = 0, misses = 0
-            for word in words where word.contains(capital) {
-                if validator.isValid(substitute(word, capital, replacement)) {
-                    hits += 1
-                } else if !validator.isValid(word) {
-                    misses += 1  // valid-looking words (e.g. "DataFrame") are never evidence against a rule
+        var tallies: [(capital: Character, replacement: String, hits: Int, misses: Int)] = []
+        for (capital, replacements) in Self.candidates {
+            for replacement in replacements {
+                var hits = 0, misses = 0
+                for word in words where word.contains(capital) {
+                    if validator.isValid(substitute(word, capital, replacement)) {
+                        hits += 1
+                    } else if !validator.isValid(word) {
+                        misses += 1  // valid-looking words (e.g. "DataFrame") are never evidence against a rule
+                    }
                 }
+                tallies.append((capital, replacement, hits, misses))
             }
-            tallies.append((capital, hits, misses))
         }
 
         // Once one rule is solidly established, the font is known to map ligatures to capitals, so other rules need a
@@ -53,7 +63,12 @@ public struct LigatureRepairer: Sendable {
         // when its replacement is itself a real word, so that is safe.
         let strong = tallies.filter { $0.hits >= 2 && Self.missRatio($0.hits, $0.misses) <= Self.maxMissRatio }
         let learned = strong.isEmpty ? [] : tallies.filter { $0.hits >= 1 }
-        return Dictionary(uniqueKeysWithValues: learned.map { ($0.capital, Self.candidates[$0.capital]!) })
+        // A glyph stands for one ligature: the one that repaired the most words.
+        var rules: [Character: (replacement: String, hits: Int)] = [:]
+        for tally in learned where tally.hits > (rules[tally.capital]?.hits ?? 0) {
+            rules[tally.capital] = (tally.replacement, tally.hits)
+        }
+        return rules.mapValues(\.replacement)
     }
 
     private static func missRatio(_ hits: Int, _ misses: Int) -> Double {

@@ -84,6 +84,21 @@ struct LibraryStoreTests {
         #expect(try store.text(for: item) == "Legacy body text.")
     }
 
+    @Test func rebuildsADocumentSavedByAnOlderFormatVersion() throws {
+        let root = try makeLibrary()
+        let store = LibraryStore(root: root)
+        let item = try store.ingest(pdfAt: writePDF(named: "doc.pdf", pages: ["Fresh body text."]))
+        let folder = root.appendingPathComponent("Items/\(item.id.uuidString)")
+        let old = #"{"title":"Old","blocks":[{"id":0,"kind":{"paragraph":{}},"text":"Stale text"}]}"#
+        try old.write(to: folder.appendingPathComponent("document.json"), atomically: true, encoding: .utf8)
+
+        let document = try store.document(for: item)
+
+        #expect(document.plainText == "Fresh body text.")
+        #expect(document.formatVersion == ReaderDocument.currentFormatVersion)
+        #expect(try store.text(for: item) == "Fresh body text.")
+    }
+
     @Test func deleteRemovesTheItemFolderEntirely() throws {
         let root = try makeLibrary()
         let store = LibraryStore(root: root)
@@ -101,5 +116,34 @@ struct LibraryStoreTests {
         let item = try store.ingest(pdfAt: writePDF(named: "a.pdf", pages: ["A"]))
         try store.delete(item)
         try store.delete(item)
+    }
+
+    @Test func savesRenderedImagesNextToTheDocument() throws {
+        let root = try makeLibrary()
+        let store = LibraryStore(root: root)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Visual.pdf")
+        try PDFFixtures.makeVisualPDF().write(to: url)
+        let item = try store.ingest(pdfAt: url)
+
+        let document = try store.document(for: item)
+        let name = try #require(document.imageNames.first)
+        #expect(FileManager.default.fileExists(atPath: store.imageURL(for: item, named: name).path))
+    }
+
+    @Test func restoresMissingImagesWhenRebuildingAnOldDocument() throws {
+        let root = try makeLibrary()
+        let store = LibraryStore(root: root)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Visual2.pdf")
+        try PDFFixtures.makeVisualPDF().write(to: url)
+        let item = try store.ingest(pdfAt: url)
+        let folder = root.appendingPathComponent("Items/\(item.id.uuidString)")
+        try FileManager.default.removeItem(at: folder.appendingPathComponent("Images"))
+        let old = #"{"title":"Old","blocks":[{"id":0,"kind":{"paragraph":{}},"text":"Stale text"}]}"#
+        try old.write(to: folder.appendingPathComponent("document.json"), atomically: true, encoding: .utf8)
+
+        let document = try store.document(for: item)
+
+        let name = try #require(document.imageNames.first)
+        #expect(FileManager.default.fileExists(atPath: store.imageURL(for: item, named: name).path))
     }
 }
