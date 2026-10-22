@@ -15,6 +15,8 @@ enum StructureBuilder {
     private static let titlePages = 2
     private static let minBoxLines = 2
     private static let minSingleLineBoxWidth: CGFloat = 300
+    /// Lines of a wrapped paragraph run close to the full width of their box.
+    private static let proseFill: CGFloat = 0.8
 
     private enum Segment {
         case heading(level: Int, lines: [TextLine])
@@ -118,7 +120,7 @@ enum StructureBuilder {
                 flow += boxLines
                 continue
             }
-            visuals.append(Visual(anchor: boxLines[0].sequence, kind: .callout, text: normalized(boxLines)))
+            visuals.append(Visual(anchor: boxLines[0].sequence, kind: .callout, text: calloutText(boxLines, in: box.rect)))
         }
         flow.sort { $0.sequence < $1.sequence }
         for figure in figures {
@@ -251,6 +253,22 @@ enum StructureBuilder {
     private static func withoutLeadingNumber(_ text: String) -> String {
         guard let match = text.firstMatch(of: /^(\d{1,2}(?:\.\d+)*\.?|[IVXLC]+\.)\s+/) else { return text }
         return String(text[match.range.upperBound...])
+    }
+
+    /// Wrapped prose reflows like any paragraph. Anything ragged (code, a table, a list) keeps the PDF's line breaks,
+    /// with each line's indentation rebuilt from how far it sits right of the least indented line.
+    private static func calloutText(_ lines: [TextLine], in box: CGRect) -> String {
+        let wrapped = lines.dropLast()
+        let isProse = wrapped.allSatisfy { $0.bounds.width >= box.width * proseFill }
+        guard lines.count > 1, !isProse else { return normalized(lines) }
+
+        let left = lines.map(\.bounds.minX).min() ?? 0
+        let widths = lines.map { $0.bounds.width / CGFloat(max($0.text.count, 1)) }.sorted()
+        let characterWidth = widths[widths.count / 2]
+        return lines.map { line in
+            let indent = characterWidth > 0 ? Int(((line.bounds.minX - left) / characterWidth).rounded()) : 0
+            return String(repeating: " ", count: max(indent, 0)) + line.text
+        }.joined(separator: "\n")
     }
 
     // MARK: - Helpers

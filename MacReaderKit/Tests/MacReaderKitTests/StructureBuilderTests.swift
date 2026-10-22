@@ -109,8 +109,13 @@ struct StructureBuilderTests {
 
     // MARK: - Boxes and figures
 
-    private func at(_ text: String, y: CGFloat, page: Int = 0, size: Double = 12) -> TextLine {
-        TextLine(text: text, fontSize: size, pageIndex: page, bounds: CGRect(x: 72, y: y, width: 300, height: CGFloat(size)))
+    private func at(_ text: String, y: CGFloat, page: Int = 0, size: Double = 12, x: CGFloat = 72, width: CGFloat = 300) -> TextLine {
+        TextLine(text: text, fontSize: size, pageIndex: page, bounds: CGRect(x: x, y: y, width: width, height: CGFloat(size)))
+    }
+
+    /// A line of monospaced text, 7pt per character, starting `indent` characters in from x = 72.
+    private func code(_ text: String, y: CGFloat, indent: Int = 0) -> TextLine {
+        at(text, y: y, x: 72 + CGFloat(indent) * 7, width: CGFloat(text.count) * 7)
     }
 
     private let noteBox = PageBox(pageIndex: 0, rect: CGRect(x: 60, y: 560, width: 480, height: 100))
@@ -118,7 +123,7 @@ struct StructureBuilderTests {
     @Test func pullsTextInsideABoxOutOfTheFlowIntoACallout() {
         let doc = StructureBuilder.build(lines: [
             at("Before the box and some more words.", y: 700),
-            at("Boxed note", y: 620), at("continues here.", y: 600),
+            at("Boxed note", y: 620, width: 440), at("continues here.", y: 600),
             at("After the box and some more words.", y: 400),
         ], fallbackTitle: "T", boxes: [noteBox])
         #expect(doc.blocks.map(\.kind) == [.paragraph, .callout, .paragraph])
@@ -172,5 +177,21 @@ struct StructureBuilderTests {
             at("Body text above the banner.", y: 700), at("Heads up: read this first.", y: 620),
         ], fallbackTitle: "T", boxes: [banner])
         #expect(doc.blocks.map(\.kind) == [.paragraph, .callout])
+    }
+
+    @Test func keepsLineBreaksInBoxesWhoseLinesDoNotFillTheBox() {
+        let doc = StructureBuilder.build(lines: [
+            at("Body text above the box.", y: 700),
+            code("def add(a, b):", y: 620), code("return a + b", y: 600, indent: 4), code("print(add(1, 2))", y: 580),
+        ], fallbackTitle: "T", boxes: [noteBox])
+        #expect(doc.blocks.last?.kind == .callout)
+        #expect(doc.blocks.last?.text == "def add(a, b):\n    return a + b\nprint(add(1, 2))")
+    }
+
+    @Test func restoresNestedIndentationRelativeToTheLeastIndentedLine() {
+        let doc = StructureBuilder.build(lines: [
+            code("class A:", y: 640, indent: 2), code("def f(self):", y: 620, indent: 4), code("return 1", y: 600, indent: 6),
+        ], fallbackTitle: "T", boxes: [noteBox])
+        #expect(doc.blocks.first?.text == "class A:\n  def f(self):\n    return 1")
     }
 }
