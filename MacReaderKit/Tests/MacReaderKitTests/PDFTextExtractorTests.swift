@@ -73,4 +73,15 @@ struct PDFTextExtractorTests {
         let text = try PDFTextExtractor.extract(from: pdf).document.plainText
         #expect(text == "finally the file was first, and specific.")
     }
+
+    @Test func turnsBoxedTextIntoACalloutAndPicturesIntoRenderedImages() throws {
+        let result = try PDFTextExtractor.extract(from: PDFFixtures.makeVisualPDF())
+
+        #expect(result.document.blocks.map(\.kind) == [
+            .paragraph, .callout, .paragraph, .image(name: "p1-1.png", aspectRatio: 2),
+        ])
+        #expect(result.document.blocks[1].text == "Boxed note")
+        let png = try #require(result.images["p1-1.png"])
+        #expect(Array(png.prefix(4)) == [0x89, 0x50, 0x4E, 0x47])
+    }
 }

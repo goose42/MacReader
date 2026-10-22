@@ -35,4 +35,11 @@ struct BoxDetectorTests {
         let inner = CGRect(x: 90, y: 520, width: 200, height: 40)
         #expect(BoxDetector.boxes(from: [outer, inner], pageSize: page) == [outer])
     }
+
+    @Test func figuresDropTinyImagesAndFullPageScans() {
+        let logo = CGRect(x: 72, y: 700, width: 24, height: 24)
+        let scan = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let photo = CGRect(x: 72, y: 300, width: 300, height: 200)
+        #expect(BoxDetector.figureFrames(from: [logo, scan, photo], pageSize: page) == [photo])
+    }
 }

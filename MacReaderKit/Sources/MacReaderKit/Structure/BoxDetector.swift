@@ -9,6 +9,16 @@ enum BoxDetector {
     /// Fills closer than this read as one block (a code box painted a line at a time leaves hairline gaps).
     private static let mergeGap: CGFloat = 3
 
+    private static let minFigureSide: CGFloat = 40
+
+    /// Frames worth showing as figures: icons and bullets are dropped, as are images that are the page itself.
+    static func figureFrames(from images: [CGRect], pageSize: CGSize) -> [CGRect] {
+        let pageArea = pageSize.width * pageSize.height
+        return images.map(\.standardized).filter { frame in
+            frame.width >= minFigureSide && frame.height >= minFigureSide && frame.width * frame.height < pageArea * maxPageCoverage
+        }
+    }
+
     /// Boxes in reading order, top of the page first.
     static func boxes(from rects: [CGRect], pageSize: CGSize) -> [CGRect] {
         let pageArea = pageSize.width * pageSize.height
