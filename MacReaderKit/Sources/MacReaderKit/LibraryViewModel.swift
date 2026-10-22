@@ -20,9 +20,10 @@ public final class LibraryViewModel {
     }
 
     public func chooseLibrary(_ url: URL) {
+        // Access must be started before bookmarking: the sandbox rejects bookmarks for unopened scoped URLs.
+        open(url)
         do {
             try location.save(url)
-            open(url)
         } catch {
             errorMessage = error.localizedDescription
         }
