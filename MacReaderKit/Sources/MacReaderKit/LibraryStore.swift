@@ -59,12 +59,13 @@ public struct LibraryStore: Sendable {
         try FileManager.default.removeItem(at: folder)
     }
 
-    /// The item's structured document. Items imported before `document.json` existed are rebuilt from their
-    /// original PDF, and the result is saved so this only happens once.
+    /// The item's structured document. Items imported before `document.json` existed, or saved by an older
+    /// extraction format, are rebuilt from their original PDF, and the result is saved so this only happens once.
     public func document(for item: LibraryItem) throws -> ReaderDocument {
         let folder = folder(for: item.id)
         if let data = try? Data(contentsOf: folder.appendingPathComponent("document.json")),
-           let document = try? JSONDecoder().decode(ReaderDocument.self, from: data) {
+           let document = try? JSONDecoder().decode(ReaderDocument.self, from: data),
+           document.formatVersion >= ReaderDocument.currentFormatVersion {
             return document
         }
         let pdf = try Data(contentsOf: folder.appendingPathComponent("original.pdf"))
