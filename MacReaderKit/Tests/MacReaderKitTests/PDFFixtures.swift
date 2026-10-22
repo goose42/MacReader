@@ -107,4 +107,23 @@ enum PDFFixtures {
         context.closePDF()
         return data as Data
     }
+
+    /// One page of lines drawn at explicit x positions, so indentation can be literal spaces or a shifted origin.
+    static func makeIndentedPDF(_ lines: [(text: String, x: CGFloat)]) -> Data {
+        let data = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let context = CGContext(consumer: CGDataConsumer(data: data)!, mediaBox: &box, nil)!
+        context.beginPDFPage(nil)
+        var y: CGFloat = 720
+        for line in lines {
+            let font = CTFontCreateWithName("Courier" as CFString, 12, nil)
+            let attributed = NSAttributedString(string: line.text, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font])
+            context.textPosition = CGPoint(x: line.x, y: y)
+            CTLineDraw(CTLineCreateWithAttributedString(attributed), context)
+            y -= 20
+        }
+        context.endPDFPage()
+        context.closePDF()
+        return data as Data
+    }
 }

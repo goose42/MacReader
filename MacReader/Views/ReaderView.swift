@@ -71,8 +71,9 @@ struct ReaderView: View {
                 .font(.system(size: fontSize, design: .serif))
                 .lineSpacing(fontSize * 0.4)
         case .callout:
+            // Boxes that keep the PDF's line breaks are code or tabular, so they get a monospaced face to keep columns and indents aligned.
             Text(block.text)
-                .font(.system(size: fontSize * 0.9))
+                .font(.system(size: fontSize * 0.85, design: block.text.contains("\n") ? .monospaced : .default))
                 .lineSpacing(fontSize * 0.3)
                 .padding(fontSize * 0.8)
                 .frame(maxWidth: .infinity, alignment: .leading)
