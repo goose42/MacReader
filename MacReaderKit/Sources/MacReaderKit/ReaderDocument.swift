@@ -9,6 +9,8 @@ public struct ReaderDocument: Codable, Equatable, Sendable {
             case callout
             /// A picture or figure, saved as `name` in the item's images folder; its `text` is empty.
             case image(name: String, aspectRatio: Double)
+            /// Rows of cells; its `text` is the same cells tab- and newline-separated.
+            case table(Table)
         }
 
         public let id: Int
@@ -21,6 +23,25 @@ public struct ReaderDocument: Codable, Equatable, Sendable {
             self.kind = kind
             self.text = text
             self.numbering = numbering
+        }
+
+        /// A table block, with its tab-separated text derived from the cells.
+        public static func table(id: Int, rows: [[String]], hasHeader: Bool) -> Block {
+            Block(
+                id: id, kind: .table(Table(rows: rows, hasHeader: hasHeader)),
+                text: rows.map { $0.joined(separator: "\t") }.joined(separator: "\n"))
+        }
+    }
+
+    /// A grid of text cells as the PDF laid them out.
+    public struct Table: Codable, Equatable, Sendable {
+        public var rows: [[String]]
+        /// Whether the first row is a header.
+        public var hasHeader: Bool
+
+        public init(rows: [[String]], hasHeader: Bool) {
+            self.rows = rows
+            self.hasHeader = hasHeader
         }
     }
 

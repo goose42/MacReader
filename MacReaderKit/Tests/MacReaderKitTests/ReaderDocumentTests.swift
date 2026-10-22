@@ -72,4 +72,24 @@ struct ReaderDocumentTests {
     @Test func imageNamesListsEveryFigureTheDocumentReferences() {
         #expect(visual.imageNames == ["p1-1.png"])
     }
+
+    private let withTable = ReaderDocument(title: "Doc", blocks: [
+        .init(id: 0, kind: .paragraph, text: "Before."),
+        .table(id: 1, rows: [["Module", "Target"], ["Python", "2 days"], ["APIs", "1.5 days"]], hasHeader: true),
+        .init(id: 2, kind: .paragraph, text: "After."),
+    ])
+
+    @Test func tablesRoundTripThroughJSON() throws {
+        let data = try JSONEncoder().encode(withTable)
+        #expect(try JSONDecoder().decode(ReaderDocument.self, from: data) == withTable)
+    }
+
+    @Test func tableBlocksCarryTabSeparatedTextForPlainText() {
+        #expect(withTable.blocks[1].text == "Module\tTarget\nPython\t2 days\nAPIs\t1.5 days")
+        #expect(withTable.plainText == "Before.\n\nModule\tTarget\nPython\t2 days\nAPIs\t1.5 days\n\nAfter.")
+    }
+
+    @Test func aTableIsNotAHeadingInTheContents() {
+        #expect(withTable.tableOfContents.isEmpty)
+    }
 }
