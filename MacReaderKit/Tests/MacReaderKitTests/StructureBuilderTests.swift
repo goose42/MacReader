@@ -156,4 +156,21 @@ struct StructureBuilderTests {
         #expect(doc.tableOfContents.isEmpty)
         #expect(doc.blocks.map(\.kind) == [.paragraph, .callout, .paragraph])
     }
+
+    @Test func leavesAnInlineHighlightOnASingleLineInTheFlow() {
+        let pill = PageBox(pageIndex: 0, rect: CGRect(x: 150, y: 612, width: 120, height: 16))
+        let doc = StructureBuilder.build(lines: [
+            at("Use inline code in a sentence here.", y: 620),
+            at("and the sentence carries on after it.", y: 600),
+        ], fallbackTitle: "T", boxes: [pill])
+        #expect(doc.blocks.map(\.kind) == [.paragraph])
+    }
+
+    @Test func keepsAWideSingleLineBoxAsACallout() {
+        let banner = PageBox(pageIndex: 0, rect: CGRect(x: 60, y: 612, width: 480, height: 24))
+        let doc = StructureBuilder.build(lines: [
+            at("Body text above the banner.", y: 700), at("Heads up: read this first.", y: 620),
+        ], fallbackTitle: "T", boxes: [banner])
+        #expect(doc.blocks.map(\.kind) == [.paragraph, .callout])
+    }
 }

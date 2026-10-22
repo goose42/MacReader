@@ -13,6 +13,8 @@ enum StructureBuilder {
     private static let headingScale = 1.25
     private static let maxLevel = 3
     private static let titlePages = 2
+    private static let minBoxLines = 2
+    private static let minSingleLineBoxWidth: CGFloat = 300
 
     private enum Segment {
         case heading(level: Int, lines: [TextLine])
@@ -110,9 +112,15 @@ enum StructureBuilder {
         }
 
         var visuals: [Visual] = []
-        for boxLines in members where !boxLines.isEmpty {
+        for (box, boxLines) in zip(boxes, members) where !boxLines.isEmpty {
+            // A short highlight behind part of one line is inline emphasis (code, a marker), not a box.
+            guard boxLines.count >= minBoxLines || box.rect.width >= minSingleLineBoxWidth else {
+                flow += boxLines
+                continue
+            }
             visuals.append(Visual(anchor: boxLines[0].sequence, kind: .callout, text: normalized(boxLines)))
         }
+        flow.sort { $0.sequence < $1.sequence }
         for figure in figures {
             let below = flow.first {
                 ($0.pageIndex == figure.pageIndex && $0.bounds.midY < figure.rect.midY) || $0.pageIndex > figure.pageIndex
