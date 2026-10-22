@@ -6,6 +6,15 @@ struct ReaderView: View {
     let document: ReaderDocument
     @AppStorage("readerFontSize") private var fontSize = 20.0
     @State private var isShowingContents = false
+    @State private var navigator: SentenceNavigator
+    @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+
+    init(document: ReaderDocument) {
+        self.document = document
+        _navigator = State(initialValue: SentenceNavigator(document: document))
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -26,6 +35,22 @@ struct ReaderView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(.background)
+            .focusable()
+            .focusEffectDisabled()
+            .focused($isFocused)
+            .focusedValue(\.sentenceNavigation, SentenceNavigation(
+                next: { navigator.next() }, previous: { navigator.previous() }))
+            .simultaneousGesture(TapGesture().onEnded { isFocused = true })
+            .onAppear { isFocused = true }
+            .onChange(of: document) { navigator = SentenceNavigator(document: document) }
+            .onChange(of: navigator.current) { _, position in
+                guard let position else { return }
+                let scroll = { proxy.scrollTo(position.blockID, anchor: UnitPoint(x: 0.5, y: navigator.scrollAnchor)) }
+                if reduceMotion { scroll() } else { withAnimation { scroll() } }
+                if let sentence = sentenceText(at: position) {
+                    AccessibilityNotification.Announcement(sentence).post()
+                }
+            }
             .navigationTitle(document.title)
             .toolbar {
                 ToolbarItemGroup {
@@ -45,15 +70,46 @@ struct ReaderView: View {
     private func blockView(_ block: ReaderDocument.Block) -> some View {
         switch block.kind {
         case .heading(let level):
-            Text(block.text)
+            Text(highlighted(block))
                 .font(.system(size: fontSize * headingScale(level), weight: .bold, design: .serif))
                 .padding(.top, fontSize * 0.6)
                 .accessibilityAddTraits(.isHeader)
         case .paragraph:
-            Text(block.text)
+            Text(highlighted(block))
                 .font(.system(size: fontSize, design: .serif))
                 .lineSpacing(fontSize * 0.4)
+        case .footnote(let marker):
+            HStack(alignment: .firstTextBaseline, spacing: fontSize * 0.5) {
+                Text(marker).foregroundStyle(.secondary)
+                Text(block.text)
+            }
+            .font(.system(size: fontSize * 0.8, design: .monospaced))
+            .padding(fontSize * 0.6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Footnote \(marker)")
+            .accessibilityValue(block.text)
         }
+    }
+
+    /// The block's text with the navigator's current sentence marked, if it falls in this block.
+    private func highlighted(_ block: ReaderDocument.Block) -> AttributedString {
+        var text = AttributedString(block.text)
+        guard let utf16 = navigator.highlight(in: block.id),
+              let range = Range(NSRange(location: utf16.lowerBound, length: utf16.count), in: text)
+        else { return text }
+        text[range].backgroundColor = Color.accentColor.opacity(0.25)
+        if differentiateWithoutColor { text[range].underlineStyle = .single }
+        return text
+    }
+
+    private func sentenceText(at position: SentenceNavigator.Position) -> String? {
+        guard let block = document.blocks.first(where: { $0.id == position.blockID }),
+              block.sentences.indices.contains(position.sentence)
+        else { return nil }
+        let range = block.sentences[position.sentence]
+        return (block.text as NSString).substring(with: NSRange(location: range.lowerBound, length: range.count))
     }
 
     private func headingScale(_ level: Int) -> Double {

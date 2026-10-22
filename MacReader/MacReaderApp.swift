@@ -6,6 +6,7 @@ struct MacReaderApp: App {
     @State private var library = LibraryViewModel()
     @State private var isChoosingLibrary = false
     @State private var isAddingPDF = false
+    @FocusedValue(\.sentenceNavigation) private var sentenceNavigation
 
     var body: some Scene {
         WindowGroup {
@@ -18,6 +19,14 @@ struct MacReaderApp: App {
                     .disabled(library.state == .noLibrary)
                 Button("Choose Library Folder…") { isChoosingLibrary = true }
                     .keyboardShortcut("o", modifiers: [.command, .shift])
+            }
+            CommandMenu("Go") {
+                Button("Next Sentence") { sentenceNavigation?.next() }
+                    .keyboardShortcut(.downArrow, modifiers: [])
+                    .disabled(sentenceNavigation == nil)
+                Button("Previous Sentence") { sentenceNavigation?.previous() }
+                    .keyboardShortcut(.upArrow, modifiers: [])
+                    .disabled(sentenceNavigation == nil)
             }
         }
     }
