@@ -8,6 +8,7 @@ struct HomeView: View {
     @Binding var isAddingPDF: Bool
     @State private var selection: MacReaderKit.LibraryItem.ID?
     @State private var pendingDeletion: MacReaderKit.LibraryItem?
+    @FocusState private var isSidebarFocused: Bool
 
     var body: some View {
         Group {
@@ -61,6 +62,7 @@ struct HomeView: View {
                     Button("Delete…", systemImage: "trash", role: .destructive) { pendingDeletion = item }
                 }
             }
+            .focused($isSidebarFocused)
             .onDeleteCommand {
                 pendingDeletion = library.items.first { $0.id == selection }
             }
@@ -85,7 +87,8 @@ struct HomeView: View {
             }
         } detail: {
             if let document = library.selectedDocument {
-                ReaderView(document: document) { library.selectedImageURL(named: $0) }
+                ReaderView(
+                    document: document, stepsWithArrowKeys: !isSidebarFocused, imageURL: { library.selectedImageURL(named: $0) })
             } else {
                 ContentUnavailableView("Select a Document", systemImage: "doc.text")
             }

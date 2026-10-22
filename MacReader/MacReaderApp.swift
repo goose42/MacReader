@@ -7,6 +7,7 @@ struct MacReaderApp: App {
     @State private var isChoosingLibrary = false
     @State private var isAddingPDF = false
     @AppStorage("readerColumnWidth") private var columnWidth = ReaderColumnWidth.narrow
+    @FocusedValue(\.sentenceNavigation) private var sentenceNavigation
 
     var body: some Scene {
         WindowGroup {
@@ -24,6 +25,14 @@ struct MacReaderApp: App {
                 columnWidthToggle(.narrow, shortcut: "1")
                 columnWidthToggle(.wide, shortcut: "2")
                 Divider()
+            }
+            CommandMenu("Go") {
+                Button("Next Sentence") { sentenceNavigation?.next() }
+                    .keyboardShortcut(.downArrow, modifiers: [])
+                    .disabled(sentenceNavigation == nil)
+                Button("Previous Sentence") { sentenceNavigation?.previous() }
+                    .keyboardShortcut(.upArrow, modifiers: [])
+                    .disabled(sentenceNavigation == nil)
             }
         }
     }

@@ -4,11 +4,23 @@ import SwiftUI
 /// A minimal, read-only reading surface in the spirit of Safari Reader.
 struct ReaderView: View {
     let document: ReaderDocument
+    /// False while the sidebar has keyboard focus, so its arrow keys keep moving the selection.
+    let stepsWithArrowKeys: Bool
     /// Where a figure's image file lives, or nil if it is missing.
     let imageURL: (String) -> URL?
     @AppStorage("readerFontSize") private var fontSize = 20.0
     @AppStorage("readerColumnWidth") private var columnWidth = ReaderColumnWidth.narrow
     @State private var isShowingContents = false
+    @State private var navigator: SentenceNavigator
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+
+    init(document: ReaderDocument, stepsWithArrowKeys: Bool = true, imageURL: @escaping (String) -> URL?) {
+        self.document = document
+        self.stepsWithArrowKeys = stepsWithArrowKeys
+        self.imageURL = imageURL
+        _navigator = State(initialValue: SentenceNavigator(document: document))
+    }
 
     var body: some View {
         let sectionBreaks = document.sectionBreaks
@@ -36,6 +48,18 @@ struct ReaderView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(.background)
+            .focusedSceneValue(\.sentenceNavigation, stepsWithArrowKeys && !isShowingContents
+                ? SentenceNavigation(next: { navigator.next() }, previous: { navigator.previous() })
+                : nil)
+            .onChange(of: document) { navigator = SentenceNavigator(document: document) }
+            .onChange(of: navigator.current) { _, position in
+                guard let position else { return }
+                let scroll = { proxy.scrollTo(position.blockID, anchor: UnitPoint(x: 0.5, y: navigator.scrollAnchor)) }
+                if reduceMotion { scroll() } else { withAnimation { scroll() } }
+                if let sentence = sentenceText(at: position) {
+                    AccessibilityNotification.Announcement(sentence).post()
+                }
+            }
             .navigationTitle(document.title)
             .toolbar {
                 ToolbarItemGroup {
@@ -67,7 +91,7 @@ struct ReaderView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isHeader)
         case .paragraph:
-            Text(block.text)
+            Text(highlighted(block))
                 .font(.system(size: fontSize, design: .serif))
                 .lineSpacing(fontSize * 0.4)
         case .callout:
@@ -82,6 +106,18 @@ struct ReaderView: View {
                 .accessibilityLabel("Boxed text. \(block.text)")
         case .image(let name, let aspectRatio):
             FigureView(url: imageURL(name), aspectRatio: aspectRatio)
+        case .footnote(let marker):
+            HStack(alignment: .firstTextBaseline, spacing: fontSize * 0.5) {
+                Text(marker).foregroundStyle(.secondary)
+                Text(block.text)
+            }
+            .font(.system(size: fontSize * 0.8, design: .monospaced))
+            .padding(fontSize * 0.6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Footnote \(marker)")
+            .accessibilityValue(block.text)
         case .table(let table):
             TableView(table: table, fontSize: fontSize)
         }
@@ -91,19 +127,38 @@ struct ReaderView: View {
     private func headingView(_ block: ReaderDocument.Block, font: Font) -> some View {
         switch block.numbering {
         case nil:
-            Text(block.text).font(font)
+            Text(highlighted(block)).font(font)
         case let numbering? where numbering.placement == .eyebrow:
             VStack(alignment: .leading, spacing: fontSize * 0.2) {
                 Text(numbering.label.uppercased())
                     .font(.subheadline.weight(.semibold))
                     .tracking(1)
                     .foregroundStyle(.secondary)
-                Text(block.text).font(font)
+                Text(highlighted(block)).font(font)
             }
         case let numbering?:
-            (Text(numbering.label).monospacedDigit().foregroundStyle(.secondary) + Text(" \(block.text)"))
+            (Text(numbering.label).monospacedDigit().foregroundStyle(.secondary) + Text(" ") + Text(highlighted(block)))
                 .font(font)
         }
+    }
+
+    /// The block's text with the navigator's current sentence marked, if it falls in this block.
+    private func highlighted(_ block: ReaderDocument.Block) -> AttributedString {
+        var text = AttributedString(block.text)
+        guard let utf16 = navigator.highlight(in: block.id),
+              let range = Range(NSRange(location: utf16.lowerBound, length: utf16.count), in: text)
+        else { return text }
+        text[range].backgroundColor = Color.accentColor.opacity(0.25)
+        if differentiateWithoutColor { text[range].underlineStyle = .single }
+        return text
+    }
+
+    private func sentenceText(at position: SentenceNavigator.Position) -> String? {
+        guard let block = document.blocks.first(where: { $0.id == position.blockID }),
+              block.sentences.indices.contains(position.sentence)
+        else { return nil }
+        let range = block.sentences[position.sentence]
+        return (block.text as NSString).substring(with: NSRange(location: range.lowerBound, length: range.count))
     }
 
     private func headingScale(_ level: Int) -> Double {

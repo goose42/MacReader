@@ -11,18 +11,44 @@ public struct ReaderDocument: Codable, Equatable, Sendable {
             case image(name: String, aspectRatio: Double)
             /// Rows of cells; its `text` is the same cells tab- and newline-separated.
             case table(Table)
+            /// A note the PDF sets in small type at the foot of a page, moved to the end of its section.
+            case footnote(marker: String)
         }
 
         public let id: Int
         public let kind: Kind
         public let text: String
         public let numbering: Numbering?
+        /// The reading stops within `text`, as UTF-16 offsets. A heading is one stop; boxes, figures, tables and
+        /// footnotes have none.
+        public let sentences: [Range<Int>]
 
         public init(id: Int, kind: Kind, text: String, numbering: Numbering? = nil) {
             self.id = id
             self.kind = kind
             self.text = text
             self.numbering = numbering
+            self.sentences = Self.readingStops(of: kind, in: text)
+        }
+
+        /// Blocks saved before sentence ranges existed derive them from their text; the document's format version
+        /// is what gets such items rebuilt.
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(Int.self, forKey: .id)
+            kind = try container.decode(Kind.self, forKey: .kind)
+            text = try container.decode(String.self, forKey: .text)
+            numbering = try container.decodeIfPresent(Numbering.self, forKey: .numbering)
+            sentences = try container.decodeIfPresent([Range<Int>].self, forKey: .sentences)
+                ?? Self.readingStops(of: kind, in: text)
+        }
+
+        private static func readingStops(of kind: Kind, in text: String) -> [Range<Int>] {
+            switch kind {
+            case .heading: text.isEmpty ? [] : [0..<text.utf16.count]
+            case .paragraph: SentenceSegmenter.ranges(in: text)
+            case .callout, .image, .table, .footnote: []
+            }
         }
 
         /// A table block, with its tab-separated text derived from the cells.
@@ -78,7 +104,7 @@ public struct ReaderDocument: Codable, Equatable, Sendable {
     }
 
     /// Bumped when extraction changes what `document.json` holds, so older items are rebuilt from their PDF.
-    public static let currentFormatVersion = 5
+    public static let currentFormatVersion = 6
 
     public var formatVersion: Int
     public var title: String
