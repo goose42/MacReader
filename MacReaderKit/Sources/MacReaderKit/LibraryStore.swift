@@ -33,7 +33,7 @@ public struct LibraryStore: Sendable {
         defer { try? fileManager.removeItem(at: staging) }
         try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
         try data.write(to: staging.appendingPathComponent("original.pdf"))
-        try extracted.document.plainText.write(to: staging.appendingPathComponent("content.txt"), atomically: true, encoding: .utf8)
+        try write(extracted.document, into: staging)
         try Self.encoder.encode(item).write(to: staging.appendingPathComponent("metadata.json"))
 
         try fileManager.createDirectory(at: itemsDirectory, withIntermediateDirectories: true)
@@ -52,8 +52,28 @@ public struct LibraryStore: Sendable {
             .sorted { $0.dateAdded > $1.dateAdded }
     }
 
+    /// The item's structured document. Items imported before `document.json` existed are rebuilt from their
+    /// original PDF, and the result is saved so this only happens once.
+    public func document(for item: LibraryItem) throws -> ReaderDocument {
+        let folder = folder(for: item.id)
+        if let data = try? Data(contentsOf: folder.appendingPathComponent("document.json")),
+           let document = try? JSONDecoder().decode(ReaderDocument.self, from: data) {
+            return document
+        }
+        let pdf = try Data(contentsOf: folder.appendingPathComponent("original.pdf"))
+        let document = try PDFTextExtractor.extract(from: pdf, fallbackTitle: item.title).document
+        try write(document, into: folder)
+        return document
+    }
+
     public func text(for item: LibraryItem) throws -> String {
         try String(contentsOf: folder(for: item.id).appendingPathComponent("content.txt"), encoding: .utf8)
+    }
+
+    /// Writes `document.json` and the plaintext `content.txt` derived from it.
+    private func write(_ document: ReaderDocument, into folder: URL) throws {
+        try document.plainText.write(to: folder.appendingPathComponent("content.txt"), atomically: true, encoding: .utf8)
+        try JSONEncoder().encode(document).write(to: folder.appendingPathComponent("document.json"), options: .atomic)
     }
 
     private static let encoder: JSONEncoder = {

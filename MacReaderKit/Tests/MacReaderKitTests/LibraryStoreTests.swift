@@ -22,13 +22,13 @@ struct LibraryStoreTests {
         #expect(try decoder.decode(LibraryItem.self, from: encoder.encode(item)) == item)
     }
 
-    @Test func ingestCreatesItemFolderWithThreeFiles() throws {
+    @Test func ingestCreatesItemFolderWithItsFiles() throws {
         let root = try makeLibrary()
         let store = LibraryStore(root: root)
         let item = try store.ingest(pdfAt: writePDF(named: "doc.pdf", pages: ["Hello world"], title: "Greeting"))
 
         let folder = root.appendingPathComponent("Items/\(item.id.uuidString)")
-        for name in ["original.pdf", "content.txt", "metadata.json"] {
+        for name in ["original.pdf", "content.txt", "document.json", "metadata.json"] {
             #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path))
         }
         #expect(item.title == "Greeting")
@@ -60,5 +60,27 @@ struct LibraryStoreTests {
         #expect(throws: PDFTextExtractor.Failure.noText) { try store.ingest(pdfAt: blank) }
         let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("Items").path)) ?? []
         #expect(leftovers.isEmpty)
+    }
+
+    @Test func documentForReturnsTheStructuredDocument() throws {
+        let store = LibraryStore(root: try makeLibrary())
+        let item = try store.ingest(pdfAt: writePDF(named: "doc.pdf", pages: ["Some readable body text."]))
+        let document = try store.document(for: item)
+        #expect(document.plainText == "Some readable body text.")
+    }
+
+    @Test func documentForRebuildsItemsImportedBeforeDocumentJSONExisted() throws {
+        let root = try makeLibrary()
+        let store = LibraryStore(root: root)
+        let item = try store.ingest(pdfAt: writePDF(named: "doc.pdf", pages: ["Legacy body text."]))
+        let folder = root.appendingPathComponent("Items/\(item.id.uuidString)")
+        try FileManager.default.removeItem(at: folder.appendingPathComponent("document.json"))
+        try "stale flattened text".write(to: folder.appendingPathComponent("content.txt"), atomically: true, encoding: .utf8)
+
+        let document = try store.document(for: item)
+
+        #expect(document.plainText == "Legacy body text.")
+        #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("document.json").path))
+        #expect(try store.text(for: item) == "Legacy body text.")
     }
 }
