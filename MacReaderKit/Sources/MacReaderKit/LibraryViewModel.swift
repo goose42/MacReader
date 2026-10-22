@@ -7,7 +7,7 @@ public final class LibraryViewModel {
 
     public private(set) var state: State = .noLibrary
     public private(set) var items: [LibraryItem] = []
-    public private(set) var selectedText: String?
+    public private(set) var selectedDocument: ReaderDocument?
     public private(set) var errorMessage: String?
 
     private let location: LibraryLocation
@@ -47,9 +47,9 @@ public final class LibraryViewModel {
 
     public func select(_ item: LibraryItem) {
         do {
-            selectedText = try store?.text(for: item)
+            selectedDocument = try store?.document(for: item)
         } catch {
-            selectedText = nil
+            selectedDocument = nil
             errorMessage = error.localizedDescription
         }
     }
@@ -59,7 +59,7 @@ public final class LibraryViewModel {
         _ = url.startAccessingSecurityScopedResource()
         scopedFolder = url
         store = LibraryStore(root: url)
-        selectedText = nil
+        selectedDocument = nil
         errorMessage = nil
         reload()
     }

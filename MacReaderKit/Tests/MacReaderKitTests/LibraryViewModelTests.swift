@@ -49,12 +49,12 @@ struct LibraryViewModelTests {
         #expect(model.errorMessage != nil)
     }
 
-    @Test func selectingItemLoadsItsText() throws {
+    @Test func selectingItemLoadsItsDocument() throws {
         let model = makeViewModel()
         model.chooseLibrary(try makeFolder())
         model.addPDFs([try writePDF("a.pdf", pages: ["Readable words"])])
         model.select(model.items[0])
-        #expect(model.selectedText?.contains("Readable words") == true)
+        #expect(model.selectedDocument?.plainText.contains("Readable words") == true)
     }
 
     @Test func restoresSavedLibraryOnInit() throws {
