@@ -10,7 +10,8 @@ struct ReaderView: View {
     let imageURL: (String) -> URL?
     @AppStorage("readerFontSize") private var fontSize = 20.0
     @AppStorage("readerColumnWidth") private var columnWidth = ReaderColumnWidth.narrow
-    @AppStorage("highlightColor") private var highlightColor = HighlightColor.accent
+    @AppStorage("highlightColor") private var highlightColor = ColorChoice.automatic
+    @AppStorage("dimmedTextColor") private var dimmedTextColor = ColorChoice.automatic
     @AppStorage("dimsSurroundingText") private var dimsSurroundingText = true
     @State private var isShowingContents = false
     @State private var navigator: SentenceNavigator
@@ -111,7 +112,7 @@ struct ReaderView: View {
         case .footnote(let marker):
             HStack(alignment: .firstTextBaseline, spacing: fontSize * 0.5) {
                 Text(marker).foregroundStyle(.secondary)
-                Text(block.text).foregroundStyle(isDimming ? .secondary : .primary)
+                Text(block.text).foregroundStyle(isDimming ? dimmedTextColor.dimmedText : .primary)
             }
             .font(.system(size: fontSize * 0.8, design: .monospaced))
             .padding(fontSize * 0.6)
@@ -150,11 +151,11 @@ struct ReaderView: View {
     /// The block's text with the navigator's current sentence marked, if it falls in this block, and the rest dimmed.
     private func highlighted(_ block: ReaderDocument.Block) -> AttributedString {
         var text = AttributedString(block.text)
-        if isDimming { text.foregroundColor = .secondary }
+        if isDimming { text.foregroundColor = dimmedTextColor.dimmedText }
         guard let utf16 = navigator.highlight(in: block.id),
               let range = Range(NSRange(location: utf16.lowerBound, length: utf16.count), in: text)
         else { return text }
-        text[range].backgroundColor = highlightColor.fill
+        text[range].backgroundColor = highlightColor.highlightFill
         text[range].foregroundColor = .primary
         if differentiateWithoutColor { text[range].underlineStyle = .single }
         return text

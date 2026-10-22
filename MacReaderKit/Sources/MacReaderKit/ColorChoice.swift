@@ -1,14 +1,14 @@
 import Foundation
 
-/// The color of the reader's current-sentence highlight: the system accent color, or a custom sRGB color.
-/// Its raw value (`accent` or `#RRGGBB`) is what the app persists.
-public enum HighlightColor: Equatable, Sendable, RawRepresentable {
-    case accent
+/// A user-selectable color setting: the app's automatic choice for that setting, or a custom sRGB color.
+/// Its raw value (`automatic` or `#RRGGBB`) is what the app persists.
+public enum ColorChoice: Equatable, Sendable, RawRepresentable {
+    case automatic
     case custom(red: Double, green: Double, blue: Double)
 
     public init?(rawValue: String) {
-        if rawValue == "accent" {
-            self = .accent
+        if rawValue == "automatic" {
+            self = .automatic
             return
         }
         guard rawValue.hasPrefix("#"), rawValue.count == 7, rawValue.dropFirst().allSatisfy(\.isHexDigit),
@@ -22,7 +22,7 @@ public enum HighlightColor: Equatable, Sendable, RawRepresentable {
 
     public var rawValue: String {
         switch self {
-        case .accent: "accent"
+        case .automatic: "automatic"
         case .custom(let red, let green, let blue):
             String(format: "#%02X%02X%02X", Self.byte(red), Self.byte(green), Self.byte(blue))
         }
