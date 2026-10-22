@@ -21,10 +21,10 @@ A native macOS app (Swift + SwiftUI) that makes reading easier. Users pick a lib
 ### Library on-disk format
 
 ```
-<UserChosenFolder>/Items/<uuid>/{original.pdf, content.txt, document.json, metadata.json}
+<UserChosenFolder>/Items/<uuid>/{original.pdf, content.txt, document.json, metadata.json, Images/}
 ```
 
-`document.json` (`ReaderDocument`) is the app-owned structure: headings and paragraphs in reading order. The reader and its table of contents render from it; `content.txt` is derived plaintext. The PDF's printed contents page is detected and dropped, and ligature glyphs mis-extracted as capitals ("Dle" for "file") are repaired. Headings carry their section numbers (`numbering`), which the reader shows with a rule before each top-level numbered section. Items without `document.json`, or saved with an older `formatVersion`, are rebuilt from `original.pdf` on first open.
+`document.json` (`ReaderDocument`) is the app-owned structure: headings, paragraphs, callouts (text in a PDF box) and images in reading order. The reader and its table of contents render from it; `content.txt` is derived plaintext. The PDF's printed contents page is detected and dropped, and ligature glyphs mis-extracted as capitals ("Dle" for "file") are repaired. Headings carry their section numbers (`numbering`), which the reader shows with a rule before each top-level numbered section. Items without `document.json`, or saved with an older `formatVersion`, are rebuilt from `original.pdf` on first open.
 
 ## Commands
 

@@ -4,6 +4,8 @@ import SwiftUI
 /// A minimal, read-only reading surface in the spirit of Safari Reader.
 struct ReaderView: View {
     let document: ReaderDocument
+    /// Where a figure's image file lives, or nil if it is missing.
+    let imageURL: (String) -> URL?
     @AppStorage("readerFontSize") private var fontSize = 20.0
     @AppStorage("readerColumnWidth") private var columnWidth = ReaderColumnWidth.narrow
     @State private var isShowingContents = false
@@ -68,6 +70,17 @@ struct ReaderView: View {
             Text(block.text)
                 .font(.system(size: fontSize, design: .serif))
                 .lineSpacing(fontSize * 0.4)
+        case .callout:
+            Text(block.text)
+                .font(.system(size: fontSize * 0.9))
+                .lineSpacing(fontSize * 0.3)
+                .padding(fontSize * 0.8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
+                .accessibilityLabel("Boxed text. \(block.text)")
+        case .image(let name, let aspectRatio):
+            FigureView(url: imageURL(name), aspectRatio: aspectRatio)
         }
     }
 
@@ -108,6 +121,31 @@ struct ReaderView: View {
                     scrollTo(id)
                 }
             }
+    }
+}
+
+/// A picture lifted from the PDF, framed so it reads as separate from the text around it.
+private struct FigureView: View {
+    let url: URL?
+    let aspectRatio: Double
+
+    var body: some View {
+        if let url, let image = NSImage(contentsOf: url) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(aspectRatio, contentMode: .fit)
+                // Figures are rendered at 2x, so half the pixel width is their natural size in points.
+                .frame(maxWidth: image.size.width / 2)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel("Image from the document")
+        } else {
+            Label("Image unavailable", systemImage: "photo")
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 80)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+        }
     }
 }
 
