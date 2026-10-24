@@ -1,7 +1,12 @@
 import Foundation
 
-/// Reads and writes the on-disk library: `Items/<uuid>/{original.pdf, content.txt, metadata.json}`.
+/// Reads and writes the on-disk library: `Items/<uuid>/{original.pdf | original.html, content.txt, document.json, …}`.
 public struct LibraryStore: Sendable {
+    public enum Failure: Error, Equatable {
+        /// A web page saved by an older extraction format; extract it again from `originalPageURL(for:)`.
+        case needsRebuild
+    }
+
     public let root: URL
 
     public init(root: URL) {
@@ -27,18 +32,60 @@ public struct LibraryStore: Sendable {
             dateAdded: Date(),
             pageCount: extracted.pageCount)
 
-        // Build in a staging folder, then move into place so failures leave nothing behind.
+        try commit(item) { staging in
+            try data.write(to: staging.appendingPathComponent("original.pdf"))
+            try write(extracted.document, images: extracted.images, into: staging)
+        }
+        return item
+    }
+
+    /// Adds an already-extracted web page: the page as saved, its images, and the document read from it.
+    @discardableResult
+    public func ingest(htmlAt url: URL, extracted: HTMLTextExtractor.Result) throws -> LibraryItem {
+        let item = LibraryItem(
+            id: UUID(),
+            title: extracted.document.title,
+            sourceFileName: url.lastPathComponent,
+            dateAdded: Date(),
+            pageCount: 0,
+            sourceKind: .html,
+            siteName: extracted.document.metadata?.siteName)
+
+        try commit(item) { staging in
+            try extracted.originalHTML.write(to: staging.appendingPathComponent("original.html"))
+            if let resources = extracted.resourcesFolder {
+                try Self.copyImages(from: resources, to: staging.appendingPathComponent(resources.lastPathComponent, isDirectory: true))
+            }
+            try write(extracted.document, images: extracted.images, into: staging)
+        }
+        return item
+    }
+
+    /// Builds the item in a staging folder, then moves it into place so failures leave nothing behind.
+    private func commit(_ item: LibraryItem, build: (URL) throws -> Void) throws {
         let fileManager = FileManager.default
         let staging = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? fileManager.removeItem(at: staging) }
         try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
-        try data.write(to: staging.appendingPathComponent("original.pdf"))
-        try write(extracted.document, images: extracted.images, into: staging)
+        try build(staging)
         try Self.encoder.encode(item).write(to: staging.appendingPathComponent("metadata.json"))
 
         try fileManager.createDirectory(at: itemsDirectory, withIntermediateDirectories: true)
         try fileManager.moveItem(at: staging, to: folder(for: item.id))
-        return item
+    }
+
+    /// Copies a saved page's pictures, keeping their folder layout, and leaves its styles and scripts behind.
+    private static func copyImages(from source: URL, to destination: URL) throws {
+        let fileManager = FileManager.default
+        let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "gif", "webp", "avif", "heic", "tiff", "bmp"]
+        guard let files = fileManager.enumerator(at: source, includingPropertiesForKeys: [.isRegularFileKey]) else { return }
+        let rootPath = source.standardizedFileURL.path
+        for case let file as URL in files where imageExtensions.contains(file.pathExtension.lowercased()) {
+            let relative = String(file.standardizedFileURL.path.dropFirst(rootPath.count + 1))
+            let target = destination.appendingPathComponent(relative)
+            try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fileManager.copyItem(at: file, to: target)
+        }
     }
 
     /// All items, newest first. Folders with missing or unreadable metadata are skipped.
@@ -68,10 +115,21 @@ public struct LibraryStore: Sendable {
            document.formatVersion >= ReaderDocument.currentFormatVersion {
             return document
         }
+        if item.sourceKind == .html { throw Failure.needsRebuild }
         let pdf = try Data(contentsOf: folder.appendingPathComponent("original.pdf"))
         let extracted = try PDFTextExtractor.extract(from: pdf, fallbackTitle: item.title)
         try write(extracted.document, images: extracted.images, into: folder)
         return extracted.document
+    }
+
+    /// The saved copy of a web page, beside its saved images, so it can be read again.
+    public func originalPageURL(for item: LibraryItem) -> URL {
+        folder(for: item.id).appendingPathComponent("original.html")
+    }
+
+    /// Replaces a web page's document with a fresh extraction of it.
+    public func refresh(_ item: LibraryItem, with extracted: HTMLTextExtractor.Result) throws {
+        try write(extracted.document, images: extracted.images, into: folder(for: item.id))
     }
 
     /// The sentence the reader last stopped on, or nil if none was saved or the file is unreadable.
