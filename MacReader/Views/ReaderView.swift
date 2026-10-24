@@ -17,6 +17,7 @@ struct ReaderView: View {
     @AppStorage("dimmedTextColor") private var dimmedTextColor = ColorChoice.automatic
     @AppStorage("dimsSurroundingText") private var dimsSurroundingText = true
     @State private var isShowingContents = false
+    @FocusState private var isFocused: Bool
     @State private var navigator: SentenceNavigator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
@@ -62,6 +63,12 @@ struct ReaderView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(.background)
+            // The arrows are handled here rather than as menu shortcuts, which flash the "Go" menu title on every press.
+            .focusable()
+            .focused($isFocused)
+            .focusEffectDisabled()
+            .onKeyPress(.downArrow) { navigator.next(); return .handled }
+            .onKeyPress(.upArrow) { navigator.previous(); return .handled }
             .focusedSceneValue(\.sentenceNavigation, stepsWithArrowKeys && !isShowingContents
                 ? SentenceNavigation(next: { navigator.next() }, previous: { navigator.previous() })
                 : nil)
@@ -164,14 +171,14 @@ struct ReaderView: View {
         case let numbering?:
             (Text(numbering.label).monospacedDigit().foregroundStyle(.secondary) + Text(" ") + Text(highlighted(block), sentences: block.sentences))
                 .font(font)
-                .onSentenceClick { navigator.move(to: .init(blockID: block.id, sentence: $0)) }
+                .onSentenceClick { isFocused = true; navigator.move(to: .init(blockID: block.id, sentence: $0)) }
         }
     }
 
     /// The block's text, where clicking a sentence moves the reading cursor to it.
     private func sentenceText(_ block: ReaderDocument.Block) -> some View {
         Text(highlighted(block), sentences: block.sentences)
-            .onSentenceClick { navigator.move(to: .init(blockID: block.id, sentence: $0)) }
+            .onSentenceClick { isFocused = true; navigator.move(to: .init(blockID: block.id, sentence: $0)) }
     }
 
     /// Whether text outside the current sentence is dimmed, which only makes sense while there is a current sentence.
