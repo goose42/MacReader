@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 struct HomeView: View {
     let library: LibraryViewModel
     @Binding var isChoosingLibrary: Bool
-    @Binding var isAddingPDF: Bool
+    @Binding var isImporting: Bool
     @State private var selection: MacReaderKit.LibraryItem.ID?
     @State private var pendingDeletion: MacReaderKit.LibraryItem?
     @FocusState private var isSidebarFocused: Bool
@@ -22,8 +22,17 @@ struct HomeView: View {
         .fileImporter(isPresented: $isChoosingLibrary, allowedContentTypes: [.folder]) { result in
             if case .success(let url) = result { library.chooseLibrary(url) }
         }
-        .fileImporter(isPresented: $isAddingPDF, allowedContentTypes: [.pdf], allowsMultipleSelection: true) { result in
-            if case .success(let urls) = result { library.addPDFs(urls) }
+        // Folders are allowed so a saved page's "…_files" folder can be chosen along with it, which is what lets the
+        // sandboxed app read its images.
+        .fileImporter(isPresented: $isImporting, allowedContentTypes: [.pdf, .html, .folder], allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result { Task { await library.addDocuments(urls) } }
+        }
+        .overlay {
+            if library.isWorking {
+                ProgressView("Reading…")
+                    .padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
         }
         .confirmationDialog(
             "Delete “\(pendingDeletion?.title ?? "")”?",
@@ -36,7 +45,7 @@ struct HomeView: View {
                 library.delete(item)
             }
         } message: { _ in
-            Text("This permanently removes it from your library. The original PDF is not affected.")
+            Text("This permanently removes it from your library. The original file is not affected.")
         }
         .alert("Something Went Wrong", isPresented: errorBinding) {
             Button("OK", role: .cancel) {}
@@ -51,13 +60,15 @@ struct HomeView: View {
                 Label {
                     VStack(alignment: .leading) {
                         Text(item.title).lineLimit(2)
-                        Text(item.dateAdded, format: .dateTime.month().day().year())
+                        Text(subtitle(of: item))
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 } icon: {
-                    Image(systemName: "doc.text")
+                    Image(systemName: item.sourceKind == .html ? "globe" : "doc.text")
                 }
+                .accessibilityElement(children: .combine)
                 .contextMenu {
                     Button("Delete…", systemImage: "trash", role: .destructive) { pendingDeletion = item }
                 }
@@ -73,16 +84,16 @@ struct HomeView: View {
                     ContentUnavailableView {
                         Label("No Documents", systemImage: "books.vertical")
                     } description: {
-                        Text("Add a PDF to start reading.")
+                        Text("Add a PDF or a saved web page to start reading.")
                     } actions: {
-                        Button("Add PDF…") { isAddingPDF = true }
+                        Button("Import…") { isImporting = true }
                     }
                 }
             }
             .toolbar {
                 ToolbarItem {
-                    Button("Add PDF", systemImage: "plus") { isAddingPDF = true }
-                        .help("Add a PDF to the library")
+                    Button("Import", systemImage: "plus") { isImporting = true }
+                        .help("Add a PDF or a saved web page to the library")
                 }
             }
         } detail: {
@@ -91,6 +102,8 @@ struct HomeView: View {
                     document: document,
                     initialPosition: library.selectedPosition,
                     stepsWithArrowKeys: !isSidebarFocused,
+                    imageScale: library.selectedItem?.sourceKind == .html ? 1 : 2,
+                    originalPageURL: library.selectedPageURL,
                     imageURL: { library.selectedImageURL(named: $0) },
                     onPositionChange: { library.saveReadingPosition($0) })
             } else {
@@ -101,10 +114,16 @@ struct HomeView: View {
             if let item = library.items.first(where: { $0.id == id }) { library.select(item) }
         }
         .dropDestination(for: URL.self) { urls, _ in
-            let pdfs = urls.filter { $0.pathExtension.lowercased() == "pdf" }
-            library.addPDFs(pdfs)
-            return !pdfs.isEmpty
+            let accepted = urls.filter { ["pdf", "html", "htm"].contains($0.pathExtension.lowercased()) || $0.hasDirectoryPath }
+            guard !accepted.isEmpty else { return false }
+            Task { await library.addDocuments(accepted) }
+            return true
         }
+    }
+
+    private func subtitle(of item: MacReaderKit.LibraryItem) -> String {
+        let date = item.dateAdded.formatted(.dateTime.month().day().year())
+        return item.siteName.map { "\($0) · \(date)" } ?? date
     }
 
     private var errorBinding: Binding<Bool> {

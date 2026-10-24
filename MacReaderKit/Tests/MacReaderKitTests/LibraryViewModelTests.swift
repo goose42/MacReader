@@ -229,4 +229,20 @@ struct LibraryViewModelTests {
         #expect(model.items.count == 1)
         #expect(model.errorMessage?.contains("images") == true)
     }
+
+    @Test func theSelectedWebPageExposesItsSavedCopyAndKind() async throws {
+        let model = makeViewModel()
+        model.chooseLibrary(try makeFolder())
+        await model.addDocuments([try writePDF("a.pdf", pages: ["A text"]), try writePage()])
+        let page = try #require(model.items.first { $0.sourceKind == .html })
+        let pdf = try #require(model.items.first { $0.sourceKind == .pdf })
+
+        model.select(page)
+        #expect(model.selectedItem == page)
+        #expect(model.selectedPageURL?.lastPathComponent == "original.html")
+
+        model.select(pdf)
+        #expect(model.selectedItem == pdf)
+        #expect(model.selectedPageURL == nil)
+    }
 }

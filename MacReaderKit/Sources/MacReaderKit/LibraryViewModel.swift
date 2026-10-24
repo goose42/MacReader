@@ -129,6 +129,14 @@ public final class LibraryViewModel {
         try? store.saveReadingPosition(position, for: item)
     }
 
+    public var selectedItem: LibraryItem? { items.first { $0.id == selectedItemID } }
+
+    /// The saved copy of the selected web page, which opens in a browser to show the page as it was.
+    public var selectedPageURL: URL? {
+        guard let store, let item = selectedItem, item.sourceKind == .html else { return nil }
+        return store.originalPageURL(for: item)
+    }
+
     /// Where a figure of the selected document is saved, or nil when nothing is selected.
     public func selectedImageURL(named name: String) -> URL? {
         guard let store, let item = items.first(where: { $0.id == selectedItemID }), selectedDocument != nil else { return nil }
