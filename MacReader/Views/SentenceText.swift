@@ -12,9 +12,17 @@ final class SentenceHitMap: @unchecked Sendable {
     fileprivate func reset() { rects.removeAll() }
     fileprivate func add(_ rect: CGRect, for index: Int) { rects.append((index, rect)) }
 
-    /// The sentence under `point`, allowing for the gap between lines.
+    /// The sentence under `point`; a click in the gap between lines or past a line's end goes to the closest one.
     func sentence(at point: CGPoint) -> Int? {
-        rects.first { $0.rect.insetBy(dx: 0, dy: -6).contains(point) }?.index
+        rects.min { distance(from: point, to: $0.rect) < distance(from: point, to: $1.rect) }.flatMap {
+            distance(from: point, to: $0.rect) <= 12 ? $0.index : nil
+        }
+    }
+
+    private func distance(from point: CGPoint, to rect: CGRect) -> CGFloat {
+        let dx = max(rect.minX - point.x, 0, point.x - rect.maxX)
+        let dy = max(rect.minY - point.y, 0, point.y - rect.maxY)
+        return hypot(dx, dy)
     }
 }
 
@@ -66,8 +74,10 @@ private struct SentenceClick: ViewModifier {
     func body(content: Content) -> some View {
         content
             .textRenderer(SentenceRenderer(map: map))
-            .onTapGesture(coordinateSpace: .local) { point in
-                if let index = map.sentence(at: point) { select(index) }
-            }
+            // Simultaneous, because the text selection that `.textSelection` installs would otherwise take the click.
+            .simultaneousGesture(
+                SpatialTapGesture(coordinateSpace: .local).onEnded { tap in
+                    if let index = map.sentence(at: tap.location) { select(index) }
+                })
     }
 }
