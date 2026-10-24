@@ -111,15 +111,4 @@ struct SentenceNavigatorTests {
         let data = try JSONEncoder().encode(position)
         #expect(try JSONDecoder().decode(Position.self, from: data) == position)
     }
-
-    @Test func positionRoundTripsThroughAURL() {
-        let position = Position(blockID: 7, sentence: 3)
-        #expect(Position(url: position.url) == position)
-    }
-
-    @Test func positionRejectsForeignOrMalformedURLs() {
-        for string in ["https://example.com/1/2", "macreader-sentence://a/b", "macreader-sentence://1", "macreader-sentence://1/2/3"] {
-            #expect(Position(url: URL(string: string)!) == nil)
-        }
-    }
 }

@@ -56,12 +56,6 @@ struct ReaderView: View {
                     }
                 }
                 .textSelection(.enabled)
-                .tint(.primary)
-                .environment(\.openURL, OpenURLAction { url in
-                    guard let position = SentenceNavigator.Position(url: url) else { return .systemAction }
-                    navigator.move(to: position)
-                    return .handled
-                })
                 .frame(maxWidth: columnWidth.maxWidth ?? .infinity, alignment: .leading)
                 .padding(.horizontal, columnWidth.horizontalPadding)
                 .padding(.vertical, 40)
@@ -122,7 +116,7 @@ struct ReaderView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isHeader)
         case .paragraph:
-            Text(highlighted(block))
+            sentenceText(block)
                 .font(.system(size: fontSize, design: .serif))
                 .lineSpacing(fontSize * 0.4)
         case .callout:
@@ -158,19 +152,26 @@ struct ReaderView: View {
     private func headingView(_ block: ReaderDocument.Block, font: Font) -> some View {
         switch block.numbering {
         case nil:
-            Text(highlighted(block)).font(font)
+            sentenceText(block).font(font)
         case let numbering? where numbering.placement == .eyebrow:
             VStack(alignment: .leading, spacing: fontSize * 0.2) {
                 Text(numbering.label.uppercased())
                     .font(.subheadline.weight(.semibold))
                     .tracking(1)
                     .foregroundStyle(.secondary)
-                Text(highlighted(block)).font(font)
+                sentenceText(block).font(font)
             }
         case let numbering?:
-            (Text(numbering.label).monospacedDigit().foregroundStyle(.secondary) + Text(" ") + Text(highlighted(block)))
+            (Text(numbering.label).monospacedDigit().foregroundStyle(.secondary) + Text(" ") + Text(highlighted(block), sentences: block.sentences))
                 .font(font)
+                .onSentenceClick { navigator.move(to: .init(blockID: block.id, sentence: $0)) }
         }
+    }
+
+    /// The block's text, where clicking a sentence moves the reading cursor to it.
+    private func sentenceText(_ block: ReaderDocument.Block) -> some View {
+        Text(highlighted(block), sentences: block.sentences)
+            .onSentenceClick { navigator.move(to: .init(blockID: block.id, sentence: $0)) }
     }
 
     /// Whether text outside the current sentence is dimmed, which only makes sense while there is a current sentence.
@@ -180,11 +181,6 @@ struct ReaderView: View {
     private func highlighted(_ block: ReaderDocument.Block) -> AttributedString {
         var text = AttributedString(block.text)
         if isDimming { text.foregroundColor = dimmedTextColor.dimmedText }
-        for (sentence, range) in block.sentences.enumerated() {
-            if let linked = Range(NSRange(location: range.lowerBound, length: range.count), in: text) {
-                text[linked].link = SentenceNavigator.Position(blockID: block.id, sentence: sentence).url
-            }
-        }
         guard let utf16 = navigator.highlight(in: block.id),
               let range = Range(NSRange(location: utf16.lowerBound, length: utf16.count), in: text)
         else { return text }

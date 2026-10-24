@@ -12,19 +12,6 @@ public struct SentenceNavigator: Equatable, Sendable {
             self.blockID = blockID
             self.sentence = sentence
         }
-
-        private static let scheme = "macreader-sentence"
-
-        /// A link naming this sentence, attached to its text so a click can be traced back to it.
-        public var url: URL { URL(string: "\(Self.scheme)://\(blockID)/\(sentence)")! }
-
-        public init?(url: URL) {
-            let parts = url.path.split(separator: "/")
-            guard url.scheme == Self.scheme, parts.count == 1,
-                  let blockID = url.host.flatMap({ Int($0) }), let sentence = Int(parts[0])
-            else { return nil }
-            self.init(blockID: blockID, sentence: sentence)
-        }
     }
 
     private struct Stop: Equatable, Sendable {
