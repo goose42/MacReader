@@ -99,4 +99,38 @@ struct HTMLTextExtractorTests {
         let url = try folder().appendingPathComponent("nope.html")
         await expectFailure(.unreadable, extracting: url)
     }
+
+    @Test func theArticleCarriesItsMetadata() async throws {
+        let url = try write("""
+            <!DOCTYPE html>
+            <!-- saved from url=(0033)https://saved.example.com/original -->
+            <html lang="en"><head>
+            <title>How Bridges Work | Example Times</title>
+            <meta property="og:site_name" content="Example Times">
+            <meta property="og:description" content="A short summary.">
+            <meta name="author" content="Ada Lovelace">
+            <meta property="article:published_time" content="2024-05-01T10:30:00Z">
+            <link rel="canonical" href="https://www.exampletimes.com/bridges">
+            </head><body><article><h1>How Bridges Work</h1><p>\(Self.filler)</p><p>\(Self.filler)</p></article></body></html>
+            """, in: try folder())
+        let document = try await HTMLTextExtractor.extract(pageAt: url).document
+        #expect(document.title == "How Bridges Work")
+        let metadata = try #require(document.metadata)
+        #expect(metadata.siteName == "Example Times")
+        #expect(metadata.byline == "Ada Lovelace")
+        #expect(metadata.excerpt == "A short summary.")
+        #expect(metadata.language == "en")
+        #expect(metadata.sourceURL?.absoluteString == "https://www.exampletimes.com/bridges")
+        #expect(metadata.publishedDate == ISO8601DateFormatter().date(from: "2024-05-01T10:30:00Z"))
+    }
+
+    @Test func theSavedFromAddressIsUsedWhenThePageNamesNoCanonicalURL() async throws {
+        let url = try write("""
+            <!DOCTYPE html>
+            <!-- saved from url=(0033)https://saved.example.com/original -->
+            <html><head><title>Plain</title></head><body><article><p>\(Self.filler)</p><p>\(Self.filler)</p></article></body></html>
+            """, in: try folder())
+        let metadata = try #require(try await HTMLTextExtractor.extract(pageAt: url).document.metadata)
+        #expect(metadata.sourceURL?.host == "saved.example.com")
+    }
 }

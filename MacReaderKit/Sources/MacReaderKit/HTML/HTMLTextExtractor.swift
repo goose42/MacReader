@@ -37,15 +37,18 @@ public enum HTMLTextExtractor {
         }
         guard let article = payload.readability else { throw Failure.noArticle }
 
-        let title = [article.title, payload.metadata.title]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty } ?? url.deletingPathExtension().lastPathComponent
+        let resolved = MetadataResolver.resolve(
+            payload.metadata, readability: article, savedFromURL: HTMLSource.savedFromURL(in: html) ?? HTMLSource.whereFromURL(at: url))
+        let title = resolved.title ?? url.deletingPathExtension().lastPathComponent
         let missing = MissingImages()
         let built = HTMLStructureBuilder.build(from: article.content, title: title) { loadImage($0, missing: missing) }
         guard !built.blocks.isEmpty else { throw Failure.noArticle }
 
         return Result(
-            document: ReaderDocument(title: title, blocks: built.blocks),
+            document: ReaderDocument(title: title, blocks: built.blocks, metadata: ArticleMetadata(
+                byline: resolved.byline, siteName: resolved.siteName, publishedDate: resolved.publishedDate,
+                sourceURL: resolved.sourceURL, language: resolved.language, isRightToLeft: resolved.isRightToLeft,
+                excerpt: resolved.excerpt)),
             originalHTML: data,
             resourcesFolder: HTMLSource.resourcesFolder(for: url),
             images: built.images,

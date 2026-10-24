@@ -29,6 +29,19 @@ enum HTMLSource {
         return URL(string: String(match.1).replacingOccurrences(of: "%2D", with: "-"))
     }
 
+    /// The address macOS recorded when the file was downloaded or saved from a browser, if it still has it.
+    static func whereFromURL(at file: URL) -> URL? {
+        let name = "com.apple.metadata:kMDItemWhereFroms"
+        let size = getxattr(file.path, name, nil, 0, 0, 0)
+        guard size > 0 else { return nil }
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard getxattr(file.path, name, &buffer, size, 0, 0) == size,
+              let sources = try? PropertyListSerialization.propertyList(from: Data(buffer), format: nil) as? [String],
+              let first = sources.first, let url = URL(string: first), url.scheme?.hasPrefix("http") == true
+        else { return nil }
+        return url
+    }
+
     /// The contents of each `<script type="application/ld+json">`. The extraction view runs without page scripts,
     /// and WebKit then drops script elements from the DOM, so these are read from the markup itself.
     static func jsonLDBlocks(in html: String) -> [String] {

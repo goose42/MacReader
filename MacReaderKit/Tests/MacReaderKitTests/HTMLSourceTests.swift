@@ -70,4 +70,19 @@ struct HTMLSourceTests {
             """
         #expect(HTMLSource.jsonLDBlocks(in: html) == [#"{"@type":"Article"}"#, #"{"@type":"Person"}"#])
     }
+
+    @Test func readsTheDownloadAddressMacOSRecordsOnTheFile() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).html")
+        try Data().write(to: url)
+        let plist = try PropertyListSerialization.data(fromPropertyList: ["https://source.example/post", "https://referrer.example/"], format: .binary, options: 0)
+        let status = plist.withUnsafeBytes { setxattr(url.path, "com.apple.metadata:kMDItemWhereFroms", $0.baseAddress, plist.count, 0, 0) }
+        #expect(status == 0)
+        #expect(HTMLSource.whereFromURL(at: url)?.absoluteString == "https://source.example/post")
+    }
+
+    @Test func aFileWithNoDownloadAddressHasNone() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).html")
+        try Data().write(to: url)
+        #expect(HTMLSource.whereFromURL(at: url) == nil)
+    }
 }
