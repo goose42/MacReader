@@ -35,13 +35,14 @@ public enum HTMLTextExtractor {
         } catch {
             throw Failure.unreadable
         }
-        guard let article = payload.readability else { throw Failure.noArticle }
+        guard let choice = ContentArbiter.choose(payload) else { throw Failure.noArticle }
 
         let resolved = MetadataResolver.resolve(
-            payload.metadata, readability: article, savedFromURL: HTMLSource.savedFromURL(in: html) ?? HTMLSource.whereFromURL(at: url))
+            payload.metadata, readability: payload.readability, savedFromURL: HTMLSource.savedFromURL(in: html) ?? HTMLSource.whereFromURL(at: url))
         let title = resolved.title ?? url.deletingPathExtension().lastPathComponent
         let missing = MissingImages()
-        let built = HTMLStructureBuilder.build(from: article.content, title: title) { loadImage($0, missing: missing) }
+        let content = BoilerplateFilter.filter(choice.content, byline: resolved.byline, publishedDate: resolved.publishedDate)
+        let built = HTMLStructureBuilder.build(from: content, title: title) { loadImage($0, missing: missing) }
         guard !built.blocks.isEmpty else { throw Failure.noArticle }
 
         return Result(

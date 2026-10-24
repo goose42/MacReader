@@ -133,4 +133,17 @@ struct HTMLTextExtractorTests {
         let metadata = try #require(try await HTMLTextExtractor.extract(pageAt: url).document.metadata)
         #expect(metadata.sourceURL?.host == "saved.example.com")
     }
+
+    @Test func trailingRelatedArticlesAndCopyrightAreCut() async throws {
+        let url = try write("""
+            <html><head><title>Cut</title></head><body><article>
+            <p>First \(Self.filler)</p><p>Second \(Self.filler)</p><p>Third \(Self.filler)</p>
+            <h3>Related articles</h3><p>TEASERMARKER another story that is long enough to look like a paragraph of text.</p>
+            <p>© 2024 Example. All rights reserved.</p></article></body></html>
+            """, in: try folder())
+        let text = try await HTMLTextExtractor.extract(pageAt: url).document.plainText
+        #expect(text.contains("Third"))
+        #expect(!text.contains("TEASERMARKER"))
+        #expect(!text.contains("All rights reserved"))
+    }
 }
