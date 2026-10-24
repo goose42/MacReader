@@ -74,6 +74,21 @@ public struct LibraryStore: Sendable {
         return extracted.document
     }
 
+    /// The sentence the reader last stopped on, or nil if none was saved or the file is unreadable.
+    public func readingPosition(for item: LibraryItem) -> SentenceNavigator.Position? {
+        guard let data = try? Data(contentsOf: positionURL(for: item)) else { return nil }
+        return try? JSONDecoder().decode(SentenceNavigator.Position.self, from: data)
+    }
+
+    /// Saved apart from `document.json`, which is regenerated when the extraction format changes.
+    public func saveReadingPosition(_ position: SentenceNavigator.Position, for item: LibraryItem) throws {
+        try JSONEncoder().encode(position).write(to: positionURL(for: item), options: .atomic)
+    }
+
+    private func positionURL(for item: LibraryItem) -> URL {
+        folder(for: item.id).appendingPathComponent("position.json")
+    }
+
     /// Where a figure of the item's document is saved.
     public func imageURL(for item: LibraryItem, named name: String) -> URL {
         folder(for: item.id).appendingPathComponent("Images", isDirectory: true).appendingPathComponent(name)

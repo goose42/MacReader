@@ -161,4 +161,27 @@ struct LibraryStoreTests {
         let name = try #require(document.imageNames.first)
         #expect(FileManager.default.fileExists(atPath: store.imageURL(for: item, named: name).path))
     }
+
+    @Test func readingPositionIsNilForAFreshItem() throws {
+        let store = LibraryStore(root: try makeLibrary())
+        let item = try store.ingest(pdfAt: writePDF(named: "doc.pdf", pages: ["Body text."]))
+        #expect(store.readingPosition(for: item) == nil)
+    }
+
+    @Test func readingPositionRoundTripsAndOverwrites() throws {
+        let store = LibraryStore(root: try makeLibrary())
+        let item = try store.ingest(pdfAt: writePDF(named: "doc.pdf", pages: ["Body text."]))
+        try store.saveReadingPosition(.init(blockID: 1, sentence: 2), for: item)
+        #expect(store.readingPosition(for: item) == .init(blockID: 1, sentence: 2))
+        try store.saveReadingPosition(.init(blockID: 4, sentence: 0), for: item)
+        #expect(store.readingPosition(for: item) == .init(blockID: 4, sentence: 0))
+    }
+
+    @Test func corruptReadingPositionReadsAsNil() throws {
+        let root = try makeLibrary()
+        let store = LibraryStore(root: root)
+        let item = try store.ingest(pdfAt: writePDF(named: "doc.pdf", pages: ["Body text."]))
+        try "not json".write(to: root.appendingPathComponent("Items/\(item.id.uuidString)/position.json"), atomically: true, encoding: .utf8)
+        #expect(store.readingPosition(for: item) == nil)
+    }
 }
