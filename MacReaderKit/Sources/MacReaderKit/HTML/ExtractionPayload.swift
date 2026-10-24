@@ -83,9 +83,40 @@ struct ReadabilityResult: Codable, Equatable, Sendable {
 struct ExtractionPayload: Codable, Equatable, Sendable {
     var readability: ReadabilityResult?
     var metadata: RawMetadata
+    /// The whole page body after junk was pruned, for the alternatives Readability is checked against.
+    var body: HTMLNode?
 
-    init(readability: ReadabilityResult? = nil, metadata: RawMetadata = RawMetadata()) {
+    init(readability: ReadabilityResult? = nil, metadata: RawMetadata = RawMetadata(), body: HTMLNode? = nil) {
         self.readability = readability
         self.metadata = metadata
+        self.body = body
+    }
+}
+
+extension HTMLNode {
+    /// Characters of text beneath this node, with runs of whitespace counted as one space.
+    var textLength: Int {
+        textContent.split(whereSeparator: \.isWhitespace).joined(separator: " ").count
+    }
+
+    /// How much of that text sits inside links.
+    var linkTextLength: Int {
+        tag == "a" ? textLength : children.reduce(0) { $0 + $1.linkTextLength }
+    }
+
+    var linkDensity: Double {
+        let length = textLength
+        return length == 0 ? 0 : Double(linkTextLength) / Double(length)
+    }
+
+    /// The first node in this subtree, this one included, that satisfies `matches`.
+    func first(where matches: (HTMLNode) -> Bool) -> HTMLNode? {
+        if matches(self) { return self }
+        for child in children { if let found = child.first(where: matches) { return found } }
+        return nil
+    }
+
+    func all(where matches: (HTMLNode) -> Bool) -> [HTMLNode] {
+        (matches(self) ? [self] : []) + children.flatMap { $0.all(where: matches) }
     }
 }

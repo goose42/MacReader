@@ -3,14 +3,6 @@ import Foundation
 import Testing
 @testable import MacReaderKit
 
-extension HTMLNode: ExpressibleByStringLiteral {
-    public init(stringLiteral value: String) { self = .text(value) }
-}
-
-private func el(_ tag: String, _ attributes: [String: String] = [:], _ children: HTMLNode...) -> HTMLNode {
-    HTMLNode(tag: tag, attributes: attributes, children: children)
-}
-
 private func png(width: Int, height: Int) -> Data {
     let rep = NSBitmapImageRep(
         bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4,

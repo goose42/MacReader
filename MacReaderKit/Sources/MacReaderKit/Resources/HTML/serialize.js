@@ -50,5 +50,5 @@ function mrExtract() {
         siteName: article.siteName,
         publishedTime: article.publishedTime,
     };
-    return JSON.stringify({ readability, metadata });
+    return JSON.stringify({ readability, metadata, body: mrNode(document.body) });
 }
