@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import MacReaderKit
 
@@ -68,5 +69,57 @@ struct SentenceNavigatorTests {
         #expect(navigator.scrollAnchor == 0.5)
         navigator.next(); navigator.next()
         #expect(navigator.scrollAnchor == 7.0 / 9.0)
+    }
+
+    @Test func moveToJumpsToAValidPosition() {
+        var navigator = SentenceNavigator(document: document)
+        #expect(navigator.move(to: Position(blockID: 1, sentence: 1)) == true)
+        #expect(navigator.current == Position(blockID: 1, sentence: 1))
+        #expect(navigator.currentRange == 5..<9)
+    }
+
+    @Test func moveToRejectsPositionsThatAreNotStops() {
+        var navigator = SentenceNavigator(document: document)
+        navigator.next()
+        for bad in [Position(blockID: 2, sentence: 0), Position(blockID: 1, sentence: 5), Position(blockID: 99, sentence: 0)] {
+            #expect(navigator.move(to: bad) == false)
+            #expect(navigator.current == Position(blockID: 1, sentence: 0))
+        }
+    }
+
+    @Test func steppingContinuesFromAJumpedToPosition() {
+        var navigator = SentenceNavigator(document: document)
+        navigator.move(to: Position(blockID: 1, sentence: 1))
+        navigator.next()
+        #expect(navigator.current == Position(blockID: 3, sentence: 0))
+        navigator.previous(); navigator.previous()
+        #expect(navigator.current == Position(blockID: 1, sentence: 0))
+    }
+
+    @Test func startingAtAValidPositionBeginsThere() {
+        let navigator = SentenceNavigator(document: document, startingAt: Position(blockID: 3, sentence: 0))
+        #expect(navigator.current == Position(blockID: 3, sentence: 0))
+    }
+
+    @Test func startingAtAStalePositionFallsBackToTheFirstStop() {
+        let navigator = SentenceNavigator(document: document, startingAt: Position(blockID: 42, sentence: 0))
+        #expect(navigator.current == Position(blockID: 0, sentence: 0))
+    }
+
+    @Test func positionRoundTripsThroughJSON() throws {
+        let position = Position(blockID: 7, sentence: 3)
+        let data = try JSONEncoder().encode(position)
+        #expect(try JSONDecoder().decode(Position.self, from: data) == position)
+    }
+
+    @Test func positionRoundTripsThroughAURL() {
+        let position = Position(blockID: 7, sentence: 3)
+        #expect(Position(url: position.url) == position)
+    }
+
+    @Test func positionRejectsForeignOrMalformedURLs() {
+        for string in ["https://example.com/1/2", "macreader-sentence://a/b", "macreader-sentence://1", "macreader-sentence://1/2/3"] {
+            #expect(Position(url: URL(string: string)!) == nil)
+        }
     }
 }
