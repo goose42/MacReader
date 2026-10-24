@@ -8,6 +8,9 @@ struct ReaderView: View {
     let stepsWithArrowKeys: Bool
     /// Where a figure's image file lives, or nil if it is missing.
     let imageURL: (String) -> URL?
+    /// Called whenever the reading cursor lands on a new sentence.
+    let initialPosition: SentenceNavigator.Position?
+    let onPositionChange: (SentenceNavigator.Position) -> Void
     @AppStorage("readerFontSize") private var fontSize = 20.0
     @AppStorage("readerColumnWidth") private var columnWidth = ReaderColumnWidth.narrow
     @AppStorage("highlightColor") private var highlightColor = ColorChoice.automatic
@@ -18,11 +21,19 @@ struct ReaderView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
-    init(document: ReaderDocument, stepsWithArrowKeys: Bool = true, imageURL: @escaping (String) -> URL?) {
+    init(
+        document: ReaderDocument,
+        initialPosition: SentenceNavigator.Position? = nil,
+        stepsWithArrowKeys: Bool = true,
+        imageURL: @escaping (String) -> URL?,
+        onPositionChange: @escaping (SentenceNavigator.Position) -> Void = { _ in }
+    ) {
         self.document = document
+        self.initialPosition = initialPosition
         self.stepsWithArrowKeys = stepsWithArrowKeys
         self.imageURL = imageURL
-        _navigator = State(initialValue: SentenceNavigator(document: document))
+        self.onPositionChange = onPositionChange
+        _navigator = State(initialValue: SentenceNavigator(document: document, startingAt: initialPosition))
     }
 
     var body: some View {
@@ -45,6 +56,12 @@ struct ReaderView: View {
                     }
                 }
                 .textSelection(.enabled)
+                .tint(.primary)
+                .environment(\.openURL, OpenURLAction { url in
+                    guard let position = SentenceNavigator.Position(url: url) else { return .systemAction }
+                    navigator.move(to: position)
+                    return .handled
+                })
                 .frame(maxWidth: columnWidth.maxWidth ?? .infinity, alignment: .leading)
                 .padding(.horizontal, columnWidth.horizontalPadding)
                 .padding(.vertical, 40)
@@ -54,9 +71,14 @@ struct ReaderView: View {
             .focusedSceneValue(\.sentenceNavigation, stepsWithArrowKeys && !isShowingContents
                 ? SentenceNavigation(next: { navigator.next() }, previous: { navigator.previous() })
                 : nil)
-            .onChange(of: document) { navigator = SentenceNavigator(document: document) }
+            .onAppear { restoreScroll(proxy) }
+            .onChange(of: document) {
+                navigator = SentenceNavigator(document: document, startingAt: initialPosition)
+                restoreScroll(proxy)
+            }
             .onChange(of: navigator.current) { _, position in
                 guard let position else { return }
+                onPositionChange(position)
                 let scroll = { proxy.scrollTo(position.blockID, anchor: UnitPoint(x: 0.5, y: navigator.scrollAnchor)) }
                 if reduceMotion { scroll() } else { withAnimation { scroll() } }
                 if let sentence = sentenceText(at: position) {
@@ -83,6 +105,12 @@ struct ReaderView: View {
                 }
             }
         }
+    }
+
+    /// Brings the saved sentence into view without animation, as the document opens.
+    private func restoreScroll(_ proxy: ScrollViewProxy) {
+        guard let position = navigator.current, position != SentenceNavigator.Position(blockID: 0, sentence: 0) else { return }
+        proxy.scrollTo(position.blockID, anchor: UnitPoint(x: 0.5, y: navigator.scrollAnchor))
     }
 
     @ViewBuilder
@@ -152,6 +180,11 @@ struct ReaderView: View {
     private func highlighted(_ block: ReaderDocument.Block) -> AttributedString {
         var text = AttributedString(block.text)
         if isDimming { text.foregroundColor = dimmedTextColor.dimmedText }
+        for (sentence, range) in block.sentences.enumerated() {
+            if let linked = Range(NSRange(location: range.lowerBound, length: range.count), in: text) {
+                text[linked].link = SentenceNavigator.Position(blockID: block.id, sentence: sentence).url
+            }
+        }
         guard let utf16 = navigator.highlight(in: block.id),
               let range = Range(NSRange(location: utf16.lowerBound, length: utf16.count), in: text)
         else { return text }
