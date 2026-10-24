@@ -186,6 +186,7 @@ public final class LibraryViewModel {
             switch failure {
             case .unreadable: return "Couldn't read this page."
             case .noArticle: return "Couldn't find an article on this page."
+            case .webViewFailed(let detail): return "Couldn't read this page (\(detail))."
             }
         }
         switch error as? PDFTextExtractor.Failure {

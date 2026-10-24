@@ -2,7 +2,11 @@ import Foundation
 
 /// Reads a saved web page into a structured document, the way `PDFTextExtractor` reads a PDF.
 public enum HTMLTextExtractor {
-    public enum Failure: Error, Equatable { case unreadable, noArticle }
+    public enum Failure: Error, Equatable {
+        case unreadable, noArticle
+        /// The web view could not load or run the page; the text says why.
+        case webViewFailed(String)
+    }
 
     public struct Result {
         public let document: ReaderDocument
@@ -33,7 +37,7 @@ public enum HTMLTextExtractor {
         do {
             payload = try await WebPageExtractor.extract(html: html, baseURL: url)
         } catch {
-            throw Failure.unreadable
+            throw Failure.webViewFailed(String(describing: error))
         }
         guard let choice = ContentArbiter.choose(payload) else { throw Failure.noArticle }
 
