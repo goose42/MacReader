@@ -245,4 +245,16 @@ struct LibraryViewModelTests {
         #expect(model.selectedItem == pdf)
         #expect(model.selectedPageURL == nil)
     }
+
+    @Test func dismissingAnErrorClearsIt() async throws {
+        let model = makeViewModel()
+        model.chooseLibrary(try makeFolder())
+        let text = try makeFolder().appendingPathComponent("notes.txt")
+        try "hello".write(to: text, atomically: true, encoding: .utf8)
+        await model.addDocuments([text])
+        #expect(model.errorMessage != nil)
+
+        model.dismissError()
+        #expect(model.errorMessage == nil)
+    }
 }

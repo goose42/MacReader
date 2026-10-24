@@ -86,6 +86,11 @@ public final class LibraryViewModel {
         reload()
     }
 
+    /// Called when the person closes the error alert, so it doesn't reappear on the next update.
+    public func dismissError() {
+        errorMessage = nil
+    }
+
     public func select(_ item: LibraryItem) {
         rebuilding?.cancel()
         selectedItemID = item.id

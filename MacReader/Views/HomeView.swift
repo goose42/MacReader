@@ -127,6 +127,6 @@ struct HomeView: View {
     }
 
     private var errorBinding: Binding<Bool> {
-        Binding(get: { library.errorMessage != nil }, set: { _ in })
+        Binding(get: { library.errorMessage != nil }, set: { if !$0 { library.dismissError() } })
     }
 }
