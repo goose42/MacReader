@@ -50,10 +50,7 @@ struct ReaderView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: fontSize * 0.9) {
-                    Text(document.title)
-                        .font(.system(size: fontSize * 1.8, weight: .bold, design: .serif))
-                        .padding(.bottom, fontSize * 0.5)
-                        .accessibilityAddTraits(.isHeader)
+                    header
                     ForEach(document.blocks) { block in
                         VStack(alignment: .leading, spacing: fontSize * 0.9) {
                             if sectionBreaks.contains(block.id) {
@@ -65,6 +62,7 @@ struct ReaderView: View {
                     }
                 }
                 .textSelection(.enabled)
+                .environment(\.layoutDirection, document.metadata?.isRightToLeft == true ? .rightToLeft : .leftToRight)
                 .frame(maxWidth: columnWidth.maxWidth ?? .infinity, alignment: .leading)
                 .padding(.horizontal, columnWidth.horizontalPadding)
                 .padding(.vertical, 40)
@@ -119,6 +117,39 @@ struct ReaderView: View {
                 }
             }
         }
+    }
+
+    /// The title, and for a web article the site it came from with its byline, date and reading time.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: fontSize * 0.3) {
+            if let siteName = document.metadata?.siteName {
+                Text(siteName)
+                    .font(.subheadline.weight(.semibold))
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                    .foregroundStyle(.secondary)
+            }
+            Text(document.title)
+                .font(.system(size: fontSize * 1.8, weight: .bold, design: .serif))
+            if let details = headerDetails {
+                Text(details)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, fontSize * 0.1)
+            }
+        }
+        .padding(.bottom, fontSize * 0.5)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    private var headerDetails: String? {
+        guard let metadata = document.metadata else { return nil }
+        var parts: [String] = []
+        if let byline = metadata.byline { parts.append(byline) }
+        if let date = metadata.publishedDate { parts.append(date.formatted(date: .long, time: .omitted)) }
+        if let minutes = document.estimatedReadingMinutes { parts.append("\(minutes) min read") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     /// Brings the saved sentence into view without animation, as the document opens.

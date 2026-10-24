@@ -66,7 +66,7 @@ private final class Walker {
     private static let blockTags: Set<String> = [
         "p", "div", "section", "article", "main", "header", "aside", "figure", "figcaption", "blockquote", "pre", "ul", "ol",
         "dl", "dt", "dd", "li", "table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption", "h1", "h2", "h3", "h4", "h5",
-        "h6", "hr", "details", "summary", "fieldset", "address", "center", "body", "html", "picture", "img",
+        "h6", "hr", "details", "summary", "fieldset", "address", "center", "body", "html", "picture", "img", "mr-callout",
     ]
     private static let calloutClasses: Set<String> = ["callout", "admonition", "notice", "markdown-alert", "alert"]
     private static let calloutRoles: Set<String> = ["note", "doc-tip", "doc-notice"]
@@ -230,7 +230,7 @@ private final class Walker {
     }
 
     private func isCallout(_ node: HTMLNode) -> Bool {
-        node.tag == "aside" || node.tag == "details"
+        node.tag == "aside" || node.tag == "details" || node.tag == "mr-callout"
             || node.attributes["role"].map(Self.calloutRoles.contains) == true
             || !classes(of: node).isDisjoint(with: Self.calloutClasses)
     }

@@ -120,6 +120,11 @@ struct HTMLStructureBuilderTests {
         #expect(summary(result) == ["callout: Heads up", "callout: More Hidden detail", "callout: Careful"])
     }
 
+    @Test func theFilterSMarkedAsidesAreCallouts() {
+        let result = build(el("p", [:], "Before"), el("mr-callout", [:], el("p", [:], "A note.")), el("p", [:], "After"))
+        #expect(summary(result) == ["p: Before", "callout: A note.", "p: After"])
+    }
+
     @Test func definitionListsReadAsParagraphs() {
         let result = build(el("dl", [:], el("dt", [:], "Term"), el("dd", [:], "Meaning")))
         #expect(summary(result) == ["p: Term", "p: Meaning"])

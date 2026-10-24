@@ -13,7 +13,7 @@ enum ReadingTime {
 
 extension ReaderDocument {
     /// Minutes to read the text, not counting code, tables, footnotes or pictures; nil for a document with none.
-    var estimatedReadingMinutes: Int? {
+    public var estimatedReadingMinutes: Int? {
         let characters = blocks.reduce(0) { total, block in
             switch block.kind {
             case .paragraph, .heading, .listItem, .quote, .callout: total + block.text.count
