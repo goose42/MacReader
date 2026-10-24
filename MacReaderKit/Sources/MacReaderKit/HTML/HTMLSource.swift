@@ -29,6 +29,13 @@ enum HTMLSource {
         return URL(string: String(match.1).replacingOccurrences(of: "%2D", with: "-"))
     }
 
+    /// The contents of each `<script type="application/ld+json">`. The extraction view runs without page scripts,
+    /// and WebKit then drops script elements from the DOM, so these are read from the markup itself.
+    static func jsonLDBlocks(in html: String) -> [String] {
+        html.matches(of: /(?is)<script\b[^>]*\btype\s*=\s*["']?application\/ld\+json["']?[^>]*>(.*?)<\/script\s*>/)
+            .map { String($0.1).trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+
     private static func declaredEncoding(in data: Data) -> String.Encoding? {
         let prefix = String(decoding: data.prefix(1024), as: UTF8.self)
         guard let match = prefix.firstMatch(of: /(?i)charset\s*=\s*["']?\s*([A-Za-z0-9_\-:.]+)/) else { return nil }

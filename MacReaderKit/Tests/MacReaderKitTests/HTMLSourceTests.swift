@@ -59,4 +59,15 @@ struct HTMLSourceTests {
     @Test func noSavedFromCommentMeansNil() {
         #expect(HTMLSource.savedFromURL(in: "<html></html>") == nil)
     }
+
+    @Test func collectsJSONLDBlocks() {
+        let html = """
+            <script>var x = 1;</script>
+            <script type="application/ld+json">{"@type":"Article"}</script>
+            <SCRIPT TYPE='application/ld+json' id=b>
+              {"@type":"Person"}
+            </SCRIPT>
+            """
+        #expect(HTMLSource.jsonLDBlocks(in: html) == [#"{"@type":"Article"}"#, #"{"@type":"Person"}"#])
+    }
 }
