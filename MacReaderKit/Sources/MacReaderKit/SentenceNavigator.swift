@@ -4,9 +4,14 @@ import Foundation
 ///
 /// Headings and paragraph sentences are stops; footnotes and empty blocks are skipped. Movement stops at either end.
 public struct SentenceNavigator: Equatable, Sendable {
-    public struct Position: Equatable, Sendable {
+    public struct Position: Equatable, Codable, Sendable {
         public let blockID: Int
         public let sentence: Int
+
+        public init(blockID: Int, sentence: Int) {
+            self.blockID = blockID
+            self.sentence = sentence
+        }
     }
 
     private struct Stop: Equatable, Sendable {
@@ -18,7 +23,8 @@ public struct SentenceNavigator: Equatable, Sendable {
     private let stops: [Stop]
     private var index: Int
 
-    public init(document: ReaderDocument) {
+    /// Starts on `start` if it is a reading stop, otherwise on the first stop (a saved position can go stale).
+    public init(document: ReaderDocument, startingAt start: Position? = nil) {
         stops = document.blocks.flatMap { block in
             block.sentences.enumerated().map { sentence, range in
                 Stop(
@@ -27,7 +33,7 @@ public struct SentenceNavigator: Equatable, Sendable {
                     blockLength: block.text.utf16.count)
             }
         }
-        index = 0
+        index = stops.firstIndex { $0.position == start } ?? 0
     }
 
     public var current: Position? { stop?.position }
@@ -46,6 +52,13 @@ public struct SentenceNavigator: Equatable, Sendable {
 
     @discardableResult
     public mutating func previous() -> Bool { move(to: index - 1) }
+
+    /// Jumps to `position`. Returns false, leaving the cursor where it was, if that is not a reading stop.
+    @discardableResult
+    public mutating func move(to position: Position) -> Bool {
+        guard let newIndex = stops.firstIndex(where: { $0.position == position }) else { return false }
+        return move(to: newIndex)
+    }
 
     public func highlight(in blockID: Int) -> Range<Int>? {
         guard let stop, stop.position.blockID == blockID else { return nil }

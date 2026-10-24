@@ -28,10 +28,8 @@ struct MacReaderApp: App {
             }
             CommandMenu("Go") {
                 Button("Next Sentence") { sentenceNavigation?.next() }
-                    .keyboardShortcut(.downArrow, modifiers: [])
                     .disabled(sentenceNavigation == nil)
                 Button("Previous Sentence") { sentenceNavigation?.previous() }
-                    .keyboardShortcut(.upArrow, modifiers: [])
                     .disabled(sentenceNavigation == nil)
             }
         }

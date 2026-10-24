@@ -124,4 +124,22 @@ struct LibraryViewModelTests {
         let imageURL = try #require(model.selectedImageURL(named: "p1-1.png"))
         #expect(FileManager.default.fileExists(atPath: imageURL.path))
     }
+
+    @Test func readingPositionSurvivesRelaunch() throws {
+        let suite = "LibraryViewModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let folder = try makeFolder()
+
+        let first = LibraryViewModel(location: LibraryLocation(defaults: defaults))
+        first.chooseLibrary(folder)
+        first.addPDFs([try writePDF("a.pdf", pages: ["One. Two. Three."])])
+        first.select(first.items[0])
+        #expect(first.selectedPosition == nil)
+        first.saveReadingPosition(.init(blockID: 0, sentence: 1))
+
+        let second = LibraryViewModel(location: LibraryLocation(defaults: defaults))
+        second.select(second.items[0])
+        #expect(second.selectedPosition == .init(blockID: 0, sentence: 1))
+    }
 }

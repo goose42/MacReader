@@ -8,21 +8,33 @@ struct ReaderView: View {
     let stepsWithArrowKeys: Bool
     /// Where a figure's image file lives, or nil if it is missing.
     let imageURL: (String) -> URL?
+    /// Called whenever the reading cursor lands on a new sentence.
+    let initialPosition: SentenceNavigator.Position?
+    let onPositionChange: (SentenceNavigator.Position) -> Void
     @AppStorage("readerFontSize") private var fontSize = 20.0
     @AppStorage("readerColumnWidth") private var columnWidth = ReaderColumnWidth.narrow
     @AppStorage("highlightColor") private var highlightColor = ColorChoice.automatic
     @AppStorage("dimmedTextColor") private var dimmedTextColor = ColorChoice.automatic
     @AppStorage("dimsSurroundingText") private var dimsSurroundingText = true
     @State private var isShowingContents = false
+    @FocusState private var isFocused: Bool
     @State private var navigator: SentenceNavigator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
-    init(document: ReaderDocument, stepsWithArrowKeys: Bool = true, imageURL: @escaping (String) -> URL?) {
+    init(
+        document: ReaderDocument,
+        initialPosition: SentenceNavigator.Position? = nil,
+        stepsWithArrowKeys: Bool = true,
+        imageURL: @escaping (String) -> URL?,
+        onPositionChange: @escaping (SentenceNavigator.Position) -> Void = { _ in }
+    ) {
         self.document = document
+        self.initialPosition = initialPosition
         self.stepsWithArrowKeys = stepsWithArrowKeys
         self.imageURL = imageURL
-        _navigator = State(initialValue: SentenceNavigator(document: document))
+        self.onPositionChange = onPositionChange
+        _navigator = State(initialValue: SentenceNavigator(document: document, startingAt: initialPosition))
     }
 
     var body: some View {
@@ -51,12 +63,23 @@ struct ReaderView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(.background)
+            // The arrows are handled here rather than as menu shortcuts, which flash the "Go" menu title on every press.
+            .focusable()
+            .focused($isFocused)
+            .focusEffectDisabled()
+            .onKeyPress(.downArrow) { navigator.next(); return .handled }
+            .onKeyPress(.upArrow) { navigator.previous(); return .handled }
             .focusedSceneValue(\.sentenceNavigation, stepsWithArrowKeys && !isShowingContents
                 ? SentenceNavigation(next: { navigator.next() }, previous: { navigator.previous() })
                 : nil)
-            .onChange(of: document) { navigator = SentenceNavigator(document: document) }
+            .onAppear { restoreScroll(proxy) }
+            .onChange(of: document) {
+                navigator = SentenceNavigator(document: document, startingAt: initialPosition)
+                restoreScroll(proxy)
+            }
             .onChange(of: navigator.current) { _, position in
                 guard let position else { return }
+                onPositionChange(position)
                 let scroll = { proxy.scrollTo(position.blockID, anchor: UnitPoint(x: 0.5, y: navigator.scrollAnchor)) }
                 if reduceMotion { scroll() } else { withAnimation { scroll() } }
                 if let sentence = sentenceText(at: position) {
@@ -85,6 +108,12 @@ struct ReaderView: View {
         }
     }
 
+    /// Brings the saved sentence into view without animation, as the document opens.
+    private func restoreScroll(_ proxy: ScrollViewProxy) {
+        guard let position = navigator.current, position != SentenceNavigator.Position(blockID: 0, sentence: 0) else { return }
+        proxy.scrollTo(position.blockID, anchor: UnitPoint(x: 0.5, y: navigator.scrollAnchor))
+    }
+
     @ViewBuilder
     private func blockView(_ block: ReaderDocument.Block) -> some View {
         switch block.kind {
@@ -94,7 +123,7 @@ struct ReaderView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityAddTraits(.isHeader)
         case .paragraph:
-            Text(highlighted(block))
+            sentenceText(block)
                 .font(.system(size: fontSize, design: .serif))
                 .lineSpacing(fontSize * 0.4)
         case .callout:
@@ -130,19 +159,26 @@ struct ReaderView: View {
     private func headingView(_ block: ReaderDocument.Block, font: Font) -> some View {
         switch block.numbering {
         case nil:
-            Text(highlighted(block)).font(font)
+            sentenceText(block).font(font)
         case let numbering? where numbering.placement == .eyebrow:
             VStack(alignment: .leading, spacing: fontSize * 0.2) {
                 Text(numbering.label.uppercased())
                     .font(.subheadline.weight(.semibold))
                     .tracking(1)
                     .foregroundStyle(.secondary)
-                Text(highlighted(block)).font(font)
+                sentenceText(block).font(font)
             }
         case let numbering?:
-            (Text(numbering.label).monospacedDigit().foregroundStyle(.secondary) + Text(" ") + Text(highlighted(block)))
+            (Text(numbering.label).monospacedDigit().foregroundStyle(.secondary) + Text(" ") + Text(highlighted(block), sentences: block.sentences))
                 .font(font)
+                .onSentenceClick { isFocused = true; navigator.move(to: .init(blockID: block.id, sentence: $0)) }
         }
+    }
+
+    /// The block's text, where clicking a sentence moves the reading cursor to it.
+    private func sentenceText(_ block: ReaderDocument.Block) -> some View {
+        Text(highlighted(block), sentences: block.sentences)
+            .onSentenceClick { isFocused = true; navigator.move(to: .init(blockID: block.id, sentence: $0)) }
     }
 
     /// Whether text outside the current sentence is dimmed, which only makes sense while there is a current sentence.

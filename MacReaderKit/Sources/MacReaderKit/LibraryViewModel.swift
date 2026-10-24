@@ -8,6 +8,8 @@ public final class LibraryViewModel {
     public private(set) var state: State = .noLibrary
     public private(set) var items: [LibraryItem] = []
     public private(set) var selectedDocument: ReaderDocument?
+    /// The sentence the selected document was last read up to, or nil if it hasn't been read.
+    public private(set) var selectedPosition: SentenceNavigator.Position?
     public private(set) var errorMessage: String?
 
     private var selectedItemID: LibraryItem.ID?
@@ -50,10 +52,19 @@ public final class LibraryViewModel {
         do {
             selectedItemID = item.id
             selectedDocument = try store?.document(for: item)
+            selectedPosition = store?.readingPosition(for: item)
         } catch {
             selectedDocument = nil
+            selectedPosition = nil
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Remembers where the reader is in the selected document. A failed write is ignored: it happens on every step.
+    public func saveReadingPosition(_ position: SentenceNavigator.Position) {
+        guard let store, let item = items.first(where: { $0.id == selectedItemID }) else { return }
+        selectedPosition = position
+        try? store.saveReadingPosition(position, for: item)
     }
 
     /// Where a figure of the selected document is saved, or nil when nothing is selected.
@@ -65,7 +76,7 @@ public final class LibraryViewModel {
     public func delete(_ item: LibraryItem) {
         do {
             try store?.delete(item)
-            if selectedItemID == item.id { selectedDocument = nil }
+            if selectedItemID == item.id { selectedDocument = nil; selectedPosition = nil }
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -80,6 +91,7 @@ public final class LibraryViewModel {
         store = LibraryStore(root: url)
         selectedItemID = nil
         selectedDocument = nil
+        selectedPosition = nil
         errorMessage = nil
         reload()
     }
