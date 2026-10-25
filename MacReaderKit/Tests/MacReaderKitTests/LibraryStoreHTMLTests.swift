@@ -42,6 +42,23 @@ struct LibraryStoreHTMLTests {
         #expect(try Data(contentsOf: store.imageURL(for: item, named: "web-1.png")) == Data([1, 2, 3]))
     }
 
+    @Test func theDownloadedImageManifestIsKeptSoThePageCanBeReadOffline() throws {
+        let source = try makeLibrary().appendingPathComponent("original_files", isDirectory: true)
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try Data([1]).write(to: source.appendingPathComponent("0.png"))
+        try Data("{}".utf8).write(to: source.appendingPathComponent("images.json"))
+        try Data("{}".utf8).write(to: source.appendingPathComponent("other.json"))
+
+        let root = try makeLibrary()
+        let store = LibraryStore(root: root)
+        let item = try store.ingest(htmlAt: URL(fileURLWithPath: "/tmp/original.html"), extracted: extracted(resources: source))
+
+        let copied = root.appendingPathComponent("Items/\(item.id.uuidString)/original_files")
+        #expect(FileManager.default.fileExists(atPath: copied.appendingPathComponent("0.png").path))
+        #expect(FileManager.default.fileExists(atPath: copied.appendingPathComponent("images.json").path))
+        #expect(!FileManager.default.fileExists(atPath: copied.appendingPathComponent("other.json").path))
+    }
+
     @Test func onlyImageFilesAreCopiedFromTheResourcesFolder() throws {
         let source = try makeLibrary().appendingPathComponent("p_files", isDirectory: true)
         try FileManager.default.createDirectory(at: source.appendingPathComponent("nested"), withIntermediateDirectories: true)

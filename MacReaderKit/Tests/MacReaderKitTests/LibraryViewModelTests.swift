@@ -23,6 +23,89 @@ struct LibraryViewModelTests {
         return url
     }
 
+    private func webResult(sourceURL: String = "https://example.com/2026/post") -> HTMLTextExtractor.Result {
+        HTMLTextExtractor.Result(
+            document: ReaderDocument(
+                title: "Fetched Post", blocks: [.init(id: 0, kind: .paragraph, text: "Hello from the web.")],
+                metadata: ArticleMetadata(siteName: "Example", sourceURL: URL(string: sourceURL))),
+            originalHTML: Data("<html>fetched</html>".utf8), resourcesFolder: nil, images: [:])
+    }
+
+    private func makeWebViewModel(
+        fetch: @escaping @MainActor (URL) async throws -> HTMLTextExtractor.Result
+    ) throws -> LibraryViewModel {
+        let suite = "LibraryViewModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let model = LibraryViewModel(location: LibraryLocation(defaults: defaults), fetchPage: fetch)
+        model.chooseLibrary(try makeFolder())
+        return model
+    }
+
+    @Test func addingAWebAddressFetchesAndStoresThePage() async throws {
+        var fetched: [URL] = []
+        let model = try makeWebViewModel { url in
+            fetched.append(url)
+            return webResult()
+        }
+        let item = await model.addWebPage("example.com/2026/post")
+
+        #expect(fetched == [URL(string: "https://example.com/2026/post")!])
+        #expect(item?.sourceKind == .html)
+        #expect(item?.sourceFileName == "example.com/2026/post")
+        #expect(model.items.map(\.id) == [item?.id])
+        #expect(model.state == .loaded)
+        #expect(model.webPageError == nil)
+    }
+
+    @Test func anInvalidAddressIsRejectedWithoutFetching() async throws {
+        var fetched = 0
+        let model = try makeWebViewModel { _ in fetched += 1; return webResult() }
+        let item = await model.addWebPage("notaurl")
+
+        #expect(item == nil)
+        #expect(fetched == 0)
+        #expect(model.webPageError == "Enter a web address that starts with http or https.")
+        #expect(model.items.isEmpty)
+    }
+
+    @Test func aFailedFetchReportsWhyAndAddsNothing() async throws {
+        let model = try makeWebViewModel { _ in throw WebPageFetcher.Failure.loadFailed("The Internet connection appears to be offline.") }
+        let item = await model.addWebPage("https://example.com")
+
+        #expect(item == nil)
+        #expect(model.webPageError == "Couldn't load this page (The Internet connection appears to be offline.).")
+        #expect(model.items.isEmpty)
+        #expect(model.errorMessage == nil)
+    }
+
+    @Test func aSlowPageReportsATimeout() async throws {
+        let model = try makeWebViewModel { _ in throw WebPageFetcher.Failure.timedOut }
+        _ = await model.addWebPage("https://example.com")
+        #expect(model.webPageError == "The page took too long to load.")
+    }
+
+    @Test func aPageWithoutAnArticleSaysSo() async throws {
+        let model = try makeWebViewModel { _ in throw HTMLTextExtractor.Failure.noArticle }
+        _ = await model.addWebPage("https://example.com")
+        #expect(model.webPageError == "Couldn't find an article on this page.")
+    }
+
+    @Test func dismissingTheWebPageErrorClearsIt() async throws {
+        let model = try makeWebViewModel { _ in webResult() }
+        _ = await model.addWebPage("notaurl")
+        model.dismissWebPageError()
+        #expect(model.webPageError == nil)
+    }
+
+    @Test func aNewAttemptClearsThePreviousError() async throws {
+        let model = try makeWebViewModel { _ in webResult() }
+        _ = await model.addWebPage("notaurl")
+        #expect(model.webPageError != nil)
+        _ = await model.addWebPage("https://example.com/2026/post")
+        #expect(model.webPageError == nil)
+    }
+
     @Test func startsWithNoLibrary() {
         #expect(makeViewModel().state == .noLibrary)
     }

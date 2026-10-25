@@ -42,10 +42,16 @@ public struct LibraryStore: Sendable {
     /// Adds an already-extracted web page: the page as saved, its images, and the document read from it.
     @discardableResult
     public func ingest(htmlAt url: URL, extracted: HTMLTextExtractor.Result) throws -> LibraryItem {
+        try ingest(extracted, named: url.lastPathComponent)
+    }
+
+    /// Adds a web page, named for where it came from; see `WebAddress.fileName(for:)`.
+    @discardableResult
+    public func ingest(_ extracted: HTMLTextExtractor.Result, named sourceFileName: String) throws -> LibraryItem {
         let item = LibraryItem(
             id: UUID(),
             title: extracted.document.title,
-            sourceFileName: url.lastPathComponent,
+            sourceFileName: sourceFileName,
             dateAdded: Date(),
             pageCount: 0,
             sourceKind: .html,
@@ -74,13 +80,15 @@ public struct LibraryStore: Sendable {
         try fileManager.moveItem(at: staging, to: folder(for: item.id))
     }
 
-    /// Copies a saved page's pictures, keeping their folder layout, and leaves its styles and scripts behind.
+    /// Copies a saved page's pictures, keeping their folder layout, and leaves its styles and scripts behind. The
+    /// manifest of a fetched page's downloaded pictures comes along, so the page can be read again offline.
     private static func copyImages(from source: URL, to destination: URL) throws {
         let fileManager = FileManager.default
         let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "gif", "webp", "avif", "heic", "tiff", "bmp"]
         guard let files = fileManager.enumerator(at: source, includingPropertiesForKeys: [.isRegularFileKey]) else { return }
         let rootPath = source.standardizedFileURL.path
-        for case let file as URL in files where imageExtensions.contains(file.pathExtension.lowercased()) {
+        for case let file as URL in files
+        where imageExtensions.contains(file.pathExtension.lowercased()) || file.lastPathComponent == HTMLTextExtractor.imageManifestName {
             let relative = String(file.standardizedFileURL.path.dropFirst(rootPath.count + 1))
             let target = destination.appendingPathComponent(relative)
             try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)

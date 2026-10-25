@@ -21,8 +21,20 @@ public final class LibraryViewModel {
     /// The extraction started by selecting a web page saved by an older format; tests wait on it.
     private(set) var rebuilding: Task<Void, Never>?
 
-    public init(location: LibraryLocation = LibraryLocation()) {
+    /// Why the last attempt to add a web address failed, for the sheet that asked; nil once an attempt starts.
+    public private(set) var webPageError: String?
+
+    private let fetchPage: @MainActor (URL) async throws -> HTMLTextExtractor.Result
+
+    /// `fetchPage` loads a web address and reads it; by default it opens the page in a browser and downloads its pictures.
+    public init(
+        location: LibraryLocation = LibraryLocation(),
+        fetchPage: @escaping @MainActor (URL) async throws -> HTMLTextExtractor.Result = {
+            try await HTMLTextExtractor.extract(fetched: WebPageFetcher.fetch($0))
+        }
+    ) {
         self.location = location
+        self.fetchPage = fetchPage
         if let saved = location.resolve() { open(saved) }
     }
 
@@ -84,6 +96,32 @@ public final class LibraryViewModel {
         }
         errorMessage = messages.isEmpty ? nil : messages.joined(separator: "\n")
         reload()
+    }
+
+    /// Fetches the page at a typed or pasted address and adds it to the library. Returns the new item, or nil with
+    /// `webPageError` set; a failure here is shown by the address sheet, not the library's alert.
+    public func addWebPage(_ input: String) async -> LibraryItem? {
+        guard let store else { return nil }
+        webPageError = nil
+        guard let address = WebAddress.parse(input) else {
+            webPageError = "Enter a web address that starts with http or https."
+            return nil
+        }
+        do {
+            let extracted = try await fetchPage(address)
+            let item = try store.ingest(extracted, named: WebAddress.fileName(for: extracted.document.metadata?.sourceURL ?? address))
+            reload()
+            return item
+        } catch {
+            guard !Task.isCancelled else { return nil }
+            webPageError = Self.describe(error)
+            return nil
+        }
+    }
+
+    /// Called when the address sheet opens, so an earlier attempt's error isn't shown again.
+    public func dismissWebPageError() {
+        webPageError = nil
     }
 
     /// Called when the person closes the error alert, so it doesn't reappear on the next update.
@@ -192,6 +230,12 @@ public final class LibraryViewModel {
             case .unreadable: return "Couldn't read this page."
             case .noArticle: return "Couldn't find an article on this page."
             case .webViewFailed(let detail): return "Couldn't read this page (\(detail))."
+            }
+        }
+        if let failure = error as? WebPageFetcher.Failure {
+            switch failure {
+            case .loadFailed(let detail): return "Couldn't load this page (\(detail))."
+            case .timedOut: return "The page took too long to load."
             }
         }
         switch error as? PDFTextExtractor.Failure {

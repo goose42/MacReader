@@ -81,6 +81,85 @@ struct HTMLTextExtractorTests {
         #expect(result.resourcesFolder?.lastPathComponent == "Saved Page_files")
     }
 
+    @Test func webImagesResolveThroughTheManifestBesideThePage() async throws {
+        let directory = try folder()
+        let files = directory.appendingPathComponent("Saved Page_files", isDirectory: true)
+        try FileManager.default.createDirectory(at: files, withIntermediateDirectories: true)
+        try png(width: 300, height: 150).write(to: files.appendingPathComponent("0.png"))
+        try JSONEncoder().encode(["https://example.com/img/photo.png": "0.png"]).write(to: files.appendingPathComponent("images.json"))
+        let url = try write("""
+            <html><head><title>Pictures</title></head><body><article>
+            <p>\(Self.filler)</p>
+            <figure><img src="https://example.com/img/photo.png" alt="A photo"><figcaption>The photo.</figcaption></figure>
+            <p>\(Self.filler)</p></article></body></html>
+            """, in: directory)
+        let result = try await HTMLTextExtractor.extract(pageAt: url)
+        #expect(result.images.count == 1)
+        #expect(result.missingImageCount == 0)
+    }
+
+    @Test func webImagesWithoutAManifestAreLeftOut() async throws {
+        let url = try write("""
+            <html><head><title>Pictures</title></head><body><article>
+            <p>\(Self.filler)</p><img src="https://example.com/img/photo.png"><p>\(Self.filler)</p></article></body></html>
+            """, in: try folder())
+        let result = try await HTMLTextExtractor.extract(pageAt: url)
+        #expect(result.images.isEmpty)
+    }
+
+    private func snapshot(_ body: String, at address: String = "https://example.com/2026/post") -> WebPageFetcher.Snapshot {
+        WebPageFetcher.Snapshot(
+            html: "<!-- saved from url=(\(String(format: "%04d", address.utf8.count)))\(address) -->\n<!DOCTYPE html><html><head><title>Fetched</title></head><body>\(body)</body></html>",
+            finalURL: URL(string: address)!)
+    }
+
+    @Test func aFetchedPageDownloadsTheArticlesPicturesAndKeepsThemOffline() async throws {
+        let picture = png(width: 300, height: 150)
+        let requested = Requested()
+        let page = snapshot("""
+            <nav><img src="https://example.com/logo.png" alt="Logo"></nav>
+            <article><p>\(Self.filler)</p>
+            <figure><img src="https://example.com/img/photo.png" alt="A photo"><figcaption>The photo.</figcaption></figure>
+            <p>\(Self.filler)</p></article>
+            """)
+        let result = try await HTMLTextExtractor.extract(fetched: page) { url in
+            requested.urls.append(url.absoluteString)
+            return picture
+        }
+        #expect(result.images.count == 1)
+        #expect(requested.urls == ["https://example.com/img/photo.png"])
+        #expect(result.missingImageCount == 0)
+        #expect(result.document.metadata?.sourceURL == URL(string: "https://example.com/2026/post"))
+
+        let folder = try #require(result.resourcesFolder)
+        #expect(folder.lastPathComponent == "original_files")
+        let manifest = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: folder.appendingPathComponent("images.json")))
+        #expect(manifest.keys.sorted() == ["https://example.com/img/photo.png"])
+        #expect(String(decoding: result.originalHTML, as: UTF8.self).contains("saved from url="))
+    }
+
+    @Test func aPictureThatFailsToDownloadIsCountedNotFatal() async throws {
+        struct Offline: Error {}
+        let page = snapshot("<article><p>\(Self.filler)</p><img src=\"https://example.com/a.png\"><p>\(Self.filler)</p></article>")
+        let result = try await HTMLTextExtractor.extract(fetched: page) { _ in throw Offline() }
+        #expect(result.images.isEmpty)
+        #expect(result.missingImageCount == 1)
+        #expect(result.document.plainText.contains("quick brown fox"))
+    }
+
+    @Test func aFetchedPageWithoutAnArticleThrows() async throws {
+        do {
+            _ = try await HTMLTextExtractor.extract(fetched: snapshot("<div></div>")) { _ in Data() }
+            Issue.record("expected noArticle")
+        } catch {
+            #expect(error as? HTMLTextExtractor.Failure == .noArticle)
+        }
+    }
+
+    private final class Requested: @unchecked Sendable {
+        var urls: [String] = []
+    }
+
     @Test func inlineDataImagesAreDecoded() async throws {
         let uri = "data:image/png;base64," + png(width: 100, height: 100).base64EncodedString()
         let url = try write("""
