@@ -8,5 +8,9 @@
     <true/>
     <key>com.apple.security.files.bookmarks.app-scope</key>
     <true/>
+    <!-- The sandbox won't start WebKit's networking process without this, even though the extraction view is set up
+         to block every request and run no page scripts. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
 </dict>
 </plist>

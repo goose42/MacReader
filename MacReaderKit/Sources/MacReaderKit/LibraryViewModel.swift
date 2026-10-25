@@ -11,11 +11,15 @@ public final class LibraryViewModel {
     /// The sentence the selected document was last read up to, or nil if it hasn't been read.
     public private(set) var selectedPosition: SentenceNavigator.Position?
     public private(set) var errorMessage: String?
+    /// True while a web page is being read, which takes a moment.
+    public private(set) var isWorking = false
 
     private var selectedItemID: LibraryItem.ID?
     private let location: LibraryLocation
     private var store: LibraryStore?
     private var scopedFolder: URL?
+    /// The extraction started by selecting a web page saved by an older format; tests wait on it.
+    private(set) var rebuilding: Task<Void, Never>?
 
     public init(location: LibraryLocation = LibraryLocation()) {
         self.location = location
@@ -48,15 +52,78 @@ public final class LibraryViewModel {
         reload()
     }
 
+    /// Adds PDFs and saved web pages. Folders selected beside a page (its "…_files" folder) are only there to give
+    /// the app access to its images.
+    public func addDocuments(_ urls: [URL]) async {
+        guard let store else { return }
+        let scopes = urls.map { ($0, $0.startAccessingSecurityScopedResource()) }
+        defer { for (url, scoped) in scopes where scoped { url.stopAccessingSecurityScopedResource() } }
+        isWorking = true
+        defer { isWorking = false }
+
+        var messages: [String] = []
+        var missingImages = 0
+        for url in urls where !Self.isFolder(url) {
+            do {
+                switch url.pathExtension.lowercased() {
+                case "pdf":
+                    try store.ingest(pdfAt: url)
+                case "html", "htm":
+                    let extracted = try await HTMLTextExtractor.extract(pageAt: url)
+                    missingImages += extracted.missingImageCount
+                    try store.ingest(htmlAt: url, extracted: extracted)
+                default:
+                    messages.append("\(url.lastPathComponent): Only PDFs and saved web pages can be added.")
+                }
+            } catch {
+                messages.append("\(url.lastPathComponent): \(Self.describe(error))")
+            }
+        }
+        if missingImages > 0 {
+            messages.append("Some images couldn’t be loaded. To include them, select the page’s “…_files” folder along with the page.")
+        }
+        errorMessage = messages.isEmpty ? nil : messages.joined(separator: "\n")
+        reload()
+    }
+
+    /// Called when the person closes the error alert, so it doesn't reappear on the next update.
+    public func dismissError() {
+        errorMessage = nil
+    }
+
     public func select(_ item: LibraryItem) {
+        rebuilding?.cancel()
+        selectedItemID = item.id
         do {
-            selectedItemID = item.id
             selectedDocument = try store?.document(for: item)
             selectedPosition = store?.readingPosition(for: item)
+        } catch LibraryStore.Failure.needsRebuild {
+            selectedDocument = nil
+            selectedPosition = nil
+            rebuild(item)
         } catch {
             selectedDocument = nil
             selectedPosition = nil
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Reads a web page saved by an older format again from its saved copy.
+    private func rebuild(_ item: LibraryItem) {
+        guard let store else { return }
+        isWorking = true
+        rebuilding = Task {
+            defer { isWorking = false }
+            do {
+                let extracted = try await HTMLTextExtractor.extract(pageAt: store.originalPageURL(for: item))
+                try store.refresh(item, with: extracted)
+                guard !Task.isCancelled, selectedItemID == item.id else { return }
+                selectedDocument = try store.document(for: item)
+                selectedPosition = store.readingPosition(for: item)
+            } catch {
+                guard !Task.isCancelled, selectedItemID == item.id else { return }
+                errorMessage = Self.describe(error)
+            }
         }
     }
 
@@ -65,6 +132,14 @@ public final class LibraryViewModel {
         guard let store, let item = items.first(where: { $0.id == selectedItemID }) else { return }
         selectedPosition = position
         try? store.saveReadingPosition(position, for: item)
+    }
+
+    public var selectedItem: LibraryItem? { items.first { $0.id == selectedItemID } }
+
+    /// The saved copy of the selected web page, which opens in a browser to show the page as it was.
+    public var selectedPageURL: URL? {
+        guard let store, let item = selectedItem, item.sourceKind == .html else { return nil }
+        return store.originalPageURL(for: item)
     }
 
     /// Where a figure of the selected document is saved, or nil when nothing is selected.
@@ -107,11 +182,22 @@ public final class LibraryViewModel {
         }
     }
 
+    private static func isFolder(_ url: URL) -> Bool {
+        url.hasDirectoryPath || (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+    }
+
     private static func describe(_ error: Error) -> String {
+        if let failure = error as? HTMLTextExtractor.Failure {
+            switch failure {
+            case .unreadable: return "Couldn't read this page."
+            case .noArticle: return "Couldn't find an article on this page."
+            case .webViewFailed(let detail): return "Couldn't read this page (\(detail))."
+            }
+        }
         switch error as? PDFTextExtractor.Failure {
-        case .unreadable: "Couldn't read this PDF."
-        case .noText: "No text found (it may be a scanned image)."
-        case nil: error.localizedDescription
+        case .unreadable: return "Couldn't read this PDF."
+        case .noText: return "No text found (it may be a scanned image)."
+        case nil: return error.localizedDescription
         }
     }
 }

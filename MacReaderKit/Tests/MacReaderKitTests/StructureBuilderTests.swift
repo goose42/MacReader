@@ -98,6 +98,7 @@ struct StructureBuilderTests {
             case .callout: "callout"
             case .image: "image"
             case .table: "table"
+            case .listItem, .quote, .code, .caption: "web"
             }
         }
     }

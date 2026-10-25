@@ -13,6 +13,14 @@ public struct ReaderDocument: Codable, Equatable, Sendable {
             case table(Table)
             /// A note the PDF sets in small type at the foot of a page, moved to the end of its section.
             case footnote(marker: String)
+            /// One item of a web page's list, marked with a bullet or its number and indented by how deeply it nests.
+            case listItem(marker: String, depth: Int)
+            /// A passage a web page sets as a quotation.
+            case quote
+            /// Preformatted text, such as program code, with its line breaks and spacing kept.
+            case code
+            /// The line of text under a figure or table.
+            case caption
         }
 
         public let id: Int
@@ -46,8 +54,8 @@ public struct ReaderDocument: Codable, Equatable, Sendable {
         private static func readingStops(of kind: Kind, in text: String) -> [Range<Int>] {
             switch kind {
             case .heading: text.isEmpty ? [] : [0..<text.utf16.count]
-            case .paragraph: SentenceSegmenter.ranges(in: text)
-            case .callout, .image, .table, .footnote: []
+            case .paragraph, .listItem, .quote: SentenceSegmenter.ranges(in: text)
+            case .callout, .image, .table, .footnote, .code, .caption: []
             }
         }
 
@@ -109,11 +117,14 @@ public struct ReaderDocument: Codable, Equatable, Sendable {
     public var formatVersion: Int
     public var title: String
     public var blocks: [Block]
+    /// What a web page says about its article, shown above the text; PDFs have none.
+    public var metadata: ArticleMetadata?
 
-    public init(title: String, blocks: [Block]) {
+    public init(title: String, blocks: [Block], metadata: ArticleMetadata? = nil) {
         self.formatVersion = Self.currentFormatVersion
         self.title = title
         self.blocks = blocks
+        self.metadata = metadata
     }
 
     public init(from decoder: Decoder) throws {
@@ -121,6 +132,7 @@ public struct ReaderDocument: Codable, Equatable, Sendable {
         formatVersion = try container.decodeIfPresent(Int.self, forKey: .formatVersion) ?? 1
         title = try container.decode(String.self, forKey: .title)
         blocks = try container.decode([Block].self, forKey: .blocks)
+        metadata = try container.decodeIfPresent(ArticleMetadata.self, forKey: .metadata)
     }
 
     public var tableOfContents: [TOCEntry] {
@@ -153,9 +165,37 @@ public struct ReaderDocument: Codable, Equatable, Sendable {
     /// Blocks joined by blank lines, headings prefixed with their numbers; the format written to `content.txt`.
     public var plainText: String {
         blocks.compactMap { block in
-            if case .image = block.kind { return nil }
+            switch block.kind {
+            case .image: return nil
+            case .listItem(let marker, let depth): return String(repeating: "    ", count: depth) + "\(marker) \(block.text)"
+            default: break
+            }
             guard let numbering = block.numbering else { return block.text }
             return "\(numbering.label) \(block.text)"
         }.joined(separator: "\n\n")
+    }
+}
+
+/// The facts about a web article that sit beside its text.
+public struct ArticleMetadata: Codable, Equatable, Sendable {
+    public var byline: String?
+    public var siteName: String?
+    public var publishedDate: Date?
+    public var sourceURL: URL?
+    public var language: String?
+    public var isRightToLeft: Bool
+    public var excerpt: String?
+
+    public init(
+        byline: String? = nil, siteName: String? = nil, publishedDate: Date? = nil, sourceURL: URL? = nil,
+        language: String? = nil, isRightToLeft: Bool = false, excerpt: String? = nil
+    ) {
+        self.byline = byline
+        self.siteName = siteName
+        self.publishedDate = publishedDate
+        self.sourceURL = sourceURL
+        self.language = language
+        self.isRightToLeft = isRightToLeft
+        self.excerpt = excerpt
     }
 }

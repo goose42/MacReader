@@ -142,4 +142,119 @@ struct LibraryViewModelTests {
         second.select(second.items[0])
         #expect(second.selectedPosition == .init(blockID: 0, sentence: 1))
     }
+
+    // MARK: - Web pages
+
+    private static let filler = String(repeating: "The quick brown fox jumps over the lazy dog, again and again. ", count: 10)
+
+    private func writePage(_ name: String = "Post.html", title: String = "A Post", in folder: URL? = nil) throws -> URL {
+        let directory = try folder ?? makeFolder()
+        let url = directory.appendingPathComponent(name)
+        try """
+            <html><head><title>\(title)</title></head><body><article><p>\(Self.filler)</p><p>\(Self.filler)</p></article></body></html>
+            """.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    @Test func addingADocumentRoutesPDFsAndWebPages() async throws {
+        let model = makeViewModel()
+        model.chooseLibrary(try makeFolder())
+        await model.addDocuments([try writePDF("a.pdf", pages: ["A text"]), try writePage()])
+        #expect(Set(model.items.map(\.sourceKind)) == [.pdf, .html])
+        #expect(model.errorMessage == nil)
+    }
+
+    @Test func selectingAWebPageLoadsItsDocument() async throws {
+        let model = makeViewModel()
+        model.chooseLibrary(try makeFolder())
+        await model.addDocuments([try writePage(title: "Selected")])
+        model.select(model.items[0])
+        #expect(model.selectedDocument?.plainText.contains("quick brown fox") == true)
+    }
+
+    @Test func aPageWithNoArticleIsReportedAndOthersAreKept() async throws {
+        let model = makeViewModel()
+        model.chooseLibrary(try makeFolder())
+        let empty = try makeFolder().appendingPathComponent("empty.html")
+        try "<html><body></body></html>".write(to: empty, atomically: true, encoding: .utf8)
+        await model.addDocuments([empty, try writePage()])
+        #expect(model.items.count == 1)
+        #expect(model.errorMessage?.contains("Couldn't find an article") == true)
+    }
+
+    @Test func unsupportedFilesAreReported() async throws {
+        let model = makeViewModel()
+        model.chooseLibrary(try makeFolder())
+        let text = try makeFolder().appendingPathComponent("notes.txt")
+        try "hello".write(to: text, atomically: true, encoding: .utf8)
+        await model.addDocuments([text])
+        #expect(model.items.isEmpty)
+        #expect(model.errorMessage?.contains("notes.txt") == true)
+    }
+
+    @Test func foldersSelectedAlongsideAPageAreNotDocuments() async throws {
+        let model = makeViewModel()
+        model.chooseLibrary(try makeFolder())
+        let directory = try makeFolder()
+        let files = directory.appendingPathComponent("Post_files", isDirectory: true)
+        try FileManager.default.createDirectory(at: files, withIntermediateDirectories: true)
+        await model.addDocuments([try writePage(in: directory), files])
+        #expect(model.items.count == 1)
+        #expect(model.errorMessage == nil)
+    }
+
+    @Test func aStaleWebPageIsRebuiltWhenSelected() async throws {
+        let library = try makeFolder()
+        let model = makeViewModel()
+        model.chooseLibrary(library)
+        await model.addDocuments([try writePage(title: "Rebuilt")])
+        let item = model.items[0]
+        let stale = #"{"formatVersion": 1, "title": "Old", "blocks": []}"#
+        try Data(stale.utf8).write(to: library.appendingPathComponent("Items/\(item.id.uuidString)/document.json"))
+
+        model.select(item)
+        await model.rebuilding?.value
+        #expect(model.selectedDocument?.plainText.contains("quick brown fox") == true)
+    }
+
+    @Test func imagesThatCouldNotBeLoadedAreMentioned() async throws {
+        let model = makeViewModel()
+        model.chooseLibrary(try makeFolder())
+        let directory = try makeFolder()
+        let url = directory.appendingPathComponent("Pics.html")
+        try """
+            <html><head><title>Pics</title></head><body><article><p>\(Self.filler)</p><img src="Pics_files/gone.png"><p>\(Self.filler)</p></article></body></html>
+            """.write(to: url, atomically: true, encoding: .utf8)
+        await model.addDocuments([url])
+        #expect(model.items.count == 1)
+        #expect(model.errorMessage?.contains("images") == true)
+    }
+
+    @Test func theSelectedWebPageExposesItsSavedCopyAndKind() async throws {
+        let model = makeViewModel()
+        model.chooseLibrary(try makeFolder())
+        await model.addDocuments([try writePDF("a.pdf", pages: ["A text"]), try writePage()])
+        let page = try #require(model.items.first { $0.sourceKind == .html })
+        let pdf = try #require(model.items.first { $0.sourceKind == .pdf })
+
+        model.select(page)
+        #expect(model.selectedItem == page)
+        #expect(model.selectedPageURL?.lastPathComponent == "original.html")
+
+        model.select(pdf)
+        #expect(model.selectedItem == pdf)
+        #expect(model.selectedPageURL == nil)
+    }
+
+    @Test func dismissingAnErrorClearsIt() async throws {
+        let model = makeViewModel()
+        model.chooseLibrary(try makeFolder())
+        let text = try makeFolder().appendingPathComponent("notes.txt")
+        try "hello".write(to: text, atomically: true, encoding: .utf8)
+        await model.addDocuments([text])
+        #expect(model.errorMessage != nil)
+
+        model.dismissError()
+        #expect(model.errorMessage == nil)
+    }
 }

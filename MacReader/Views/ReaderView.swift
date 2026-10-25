@@ -6,6 +6,10 @@ struct ReaderView: View {
     let document: ReaderDocument
     /// False while the sidebar has keyboard focus, so its arrow keys keep moving the selection.
     let stepsWithArrowKeys: Bool
+    /// How many pixels of a figure make a point: PDF figures are rendered at 2x, web images are shown at their size.
+    let imageScale: Double
+    /// The saved copy of the page this document was read from, if it came from the web.
+    let originalPageURL: URL?
     /// Where a figure's image file lives, or nil if it is missing.
     let imageURL: (String) -> URL?
     /// Called whenever the reading cursor lands on a new sentence.
@@ -26,12 +30,16 @@ struct ReaderView: View {
         document: ReaderDocument,
         initialPosition: SentenceNavigator.Position? = nil,
         stepsWithArrowKeys: Bool = true,
+        imageScale: Double = 2,
+        originalPageURL: URL? = nil,
         imageURL: @escaping (String) -> URL?,
         onPositionChange: @escaping (SentenceNavigator.Position) -> Void = { _ in }
     ) {
         self.document = document
         self.initialPosition = initialPosition
         self.stepsWithArrowKeys = stepsWithArrowKeys
+        self.imageScale = imageScale
+        self.originalPageURL = originalPageURL
         self.imageURL = imageURL
         self.onPositionChange = onPositionChange
         _navigator = State(initialValue: SentenceNavigator(document: document, startingAt: initialPosition))
@@ -42,10 +50,7 @@ struct ReaderView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: fontSize * 0.9) {
-                    Text(document.title)
-                        .font(.system(size: fontSize * 1.8, weight: .bold, design: .serif))
-                        .padding(.bottom, fontSize * 0.5)
-                        .accessibilityAddTraits(.isHeader)
+                    header
                     ForEach(document.blocks) { block in
                         VStack(alignment: .leading, spacing: fontSize * 0.9) {
                             if sectionBreaks.contains(block.id) {
@@ -57,6 +62,7 @@ struct ReaderView: View {
                     }
                 }
                 .textSelection(.enabled)
+                .environment(\.layoutDirection, document.metadata?.isRightToLeft == true ? .rightToLeft : .leftToRight)
                 .frame(maxWidth: columnWidth.maxWidth ?? .infinity, alignment: .leading)
                 .padding(.horizontal, columnWidth.horizontalPadding)
                 .padding(.vertical, 40)
@@ -89,6 +95,11 @@ struct ReaderView: View {
             .navigationTitle(document.title)
             .toolbar {
                 ToolbarItemGroup {
+                    if let originalPageURL {
+                        Button("Open Original", systemImage: "safari") { NSWorkspace.shared.open(originalPageURL) }
+                            .keyboardShortcut("o", modifiers: [.command, .option])
+                            .help("Open the saved page in your browser")
+                    }
                     contentsButton(scrollTo: { id in
                         withAnimation { proxy.scrollTo(id, anchor: .top) }
                     })
@@ -106,6 +117,39 @@ struct ReaderView: View {
                 }
             }
         }
+    }
+
+    /// The title, and for a web article the site it came from with its byline, date and reading time.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: fontSize * 0.3) {
+            if let siteName = document.metadata?.siteName {
+                Text(siteName)
+                    .font(.subheadline.weight(.semibold))
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                    .foregroundStyle(.secondary)
+            }
+            Text(document.title)
+                .font(.system(size: fontSize * 1.8, weight: .bold, design: .serif))
+            if let details = headerDetails {
+                Text(details)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, fontSize * 0.1)
+            }
+        }
+        .padding(.bottom, fontSize * 0.5)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    private var headerDetails: String? {
+        guard let metadata = document.metadata else { return nil }
+        var parts: [String] = []
+        if let byline = metadata.byline { parts.append(byline) }
+        if let date = metadata.publishedDate { parts.append(date.formatted(date: .long, time: .omitted)) }
+        if let minutes = document.estimatedReadingMinutes { parts.append("\(minutes) min read") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     /// Brings the saved sentence into view without animation, as the document opens.
@@ -137,7 +181,47 @@ struct ReaderView: View {
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
                 .accessibilityLabel("Boxed text. \(block.text)")
         case .image(let name, let aspectRatio):
-            FigureView(url: imageURL(name), aspectRatio: aspectRatio)
+            FigureView(url: imageURL(name), aspectRatio: aspectRatio, scale: imageScale)
+        case .listItem(let marker, let depth):
+            HStack(alignment: .firstTextBaseline, spacing: fontSize * 0.4) {
+                Text(marker)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: fontSize * 1.2, alignment: .trailing)
+                    .accessibilityHidden(true)
+                sentenceText(block)
+            }
+            .font(.system(size: fontSize, design: .serif))
+            .lineSpacing(fontSize * 0.4)
+            .padding(.leading, CGFloat(depth) * fontSize * 1.4)
+            .accessibilityElement(children: .combine)
+        case .quote:
+            HStack(alignment: .top, spacing: fontSize * 0.7) {
+                Rectangle().fill(.separator).frame(width: 3)
+                sentenceText(block)
+            }
+            .font(.system(size: fontSize, design: .serif).italic())
+            .lineSpacing(fontSize * 0.4)
+            .padding(.leading, fontSize * 0.5)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Quote. \(block.text)")
+        case .code:
+            ScrollView(.horizontal) {
+                Text(block.text)
+                    .font(.system(size: fontSize * 0.8, design: .monospaced))
+                    .lineSpacing(fontSize * 0.2)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .padding(fontSize * 0.8)
+            }
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+            .accessibilityLabel("Code. \(block.text)")
+        case .caption:
+            Text(block.text)
+                .font(.system(size: fontSize * 0.8))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .accessibilityLabel("Caption. \(block.text)")
         case .footnote(let marker):
             HStack(alignment: .firstTextBaseline, spacing: fontSize * 0.5) {
                 Text(marker).foregroundStyle(.secondary)
@@ -267,14 +351,15 @@ private struct TableView: View {
 private struct FigureView: View {
     let url: URL?
     let aspectRatio: Double
+    /// Pixels per point: PDF figures are rendered at 2x, so half their pixel width is their natural size.
+    let scale: Double
 
     var body: some View {
         if let url, let image = NSImage(contentsOf: url) {
             Image(nsImage: image)
                 .resizable()
                 .aspectRatio(aspectRatio, contentMode: .fit)
-                // Figures are rendered at 2x, so half the pixel width is their natural size in points.
-                .frame(maxWidth: image.size.width / 2)
+                .frame(maxWidth: pixelWidth(of: image) / scale)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -285,6 +370,13 @@ private struct FigureView: View {
                 .frame(maxWidth: .infinity, minHeight: 80)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
         }
+    }
+}
+
+extension FigureView {
+    /// The image's width in pixels, whatever resolution its file claims to be.
+    fileprivate func pixelWidth(of image: NSImage) -> Double {
+        Double(image.representations.map(\.pixelsWide).max() ?? Int(image.size.width))
     }
 }
 

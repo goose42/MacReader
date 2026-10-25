@@ -8,7 +8,7 @@ let package = Package(
         .library(name: "MacReaderKit", targets: ["MacReaderKit"]),
     ],
     targets: [
-        .target(name: "MacReaderKit"),
-        .testTarget(name: "MacReaderKitTests", dependencies: ["MacReaderKit"]),
+        .target(name: "MacReaderKit", resources: [.copy("Resources/HTML")]),
+        .testTarget(name: "MacReaderKitTests", dependencies: ["MacReaderKit"], resources: [.copy("Fixtures")]),
     ]
 )
