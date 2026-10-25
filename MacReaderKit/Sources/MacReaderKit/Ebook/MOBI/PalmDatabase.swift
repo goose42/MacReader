@@ -43,8 +43,15 @@ struct PalmDatabase: Sendable {
 
     /// The bytes of record `index`, which run to the start of the next record or the end of the file.
     func record(at index: Int) -> Data? {
+        view(ofRecord: index).map { Data($0) }
+    }
+
+    /// The same bytes as `record(at:)`, as a window onto the file's own storage rather than a copy. Its indices don't
+    /// start at zero, so index it through `startIndex`; it keeps the whole file alive for as long as it is held, which
+    /// is cheap when the file is memory-mapped. For records read once and written out, such as pictures.
+    func view(ofRecord index: Int) -> Data? {
         guard offsets.indices.contains(index) else { return nil }
         let end = index + 1 < offsets.count ? offsets[index + 1] : bytes.count
-        return Data(bytes[offsets[index]..<end])
+        return bytes[offsets[index]..<end]
     }
 }

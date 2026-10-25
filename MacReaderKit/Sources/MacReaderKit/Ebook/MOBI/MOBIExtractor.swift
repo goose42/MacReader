@@ -6,7 +6,8 @@ enum MOBIExtractor {
     @MainActor
     static func extract(from url: URL) async throws -> EbookExtractor.Result {
         let database: PalmDatabase
-        do { database = try PalmDatabase(data: Data(contentsOf: url)) } catch { throw EbookExtractor.Failure.unreadable }
+        // Mapped rather than read, so a large book is paged in as it is used and the pictures are not copied out of it.
+        do { database = try PalmDatabase(data: Data(contentsOf: url, options: .mappedIfSafe)) } catch { throw EbookExtractor.Failure.unreadable }
         guard database.isMobipocket else { throw EbookExtractor.Failure.unsupported }
 
         let first: MOBIBook
@@ -96,7 +97,7 @@ enum MOBIExtractor {
             guard address.hasPrefix(MOBI6Markup.imageScheme), let first = firstImage,
                   let number = Int(address.dropFirst(MOBI6Markup.imageScheme.count)), number > 0
             else { return nil }
-            return book.record(first + number - 1)
+            return book.recordView(first + number - 1)
         }
         guard !built.blocks.isEmpty else { throw EbookExtractor.Failure.noText }
 

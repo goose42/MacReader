@@ -26,6 +26,11 @@ struct MOBIBook: Sendable {
         database.record(at: base + index)
     }
 
+    /// A record by its number, as a window onto the file rather than a copy; see `PalmDatabase.view(ofRecord:)`.
+    func recordView(_ index: Int) -> Data? {
+        database.view(ofRecord: base + index)
+    }
+
     /// The book's markup: every text record, stripped of the data that trails it and decompressed, in order.
     func text() throws -> Data {
         let decode: (Data) throws -> Data

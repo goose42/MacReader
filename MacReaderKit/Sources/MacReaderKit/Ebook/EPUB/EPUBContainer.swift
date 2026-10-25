@@ -27,7 +27,7 @@ struct EPUBContainer: Sendable {
         if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
             self.init(storage: .folder(url.resolvingSymlinksInPath()))
         } else {
-            try self.init(data: Data(contentsOf: url))
+            try self.init(data: Data(contentsOf: url, options: .mappedIfSafe))
         }
     }
 

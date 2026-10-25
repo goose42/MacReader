@@ -33,6 +33,23 @@ struct PalmDatabaseTests {
         #expect(try PalmDatabase(data: PalmFixture.database(type: "TEXt", creator: "REAd", records: [Data()])).isMobipocket == false)
     }
 
+    @Test func aRecordCanBeViewedWithoutCopyingIt() throws {
+        let big = Data((0..<5000).map { UInt8($0 % 251) })
+        let data = PalmFixture.database(records: [Data("first".utf8), big, Data("last".utf8)])
+        let database = try PalmDatabase(data: data)
+
+        let view = try #require(database.view(ofRecord: 1))
+        #expect(Array(view) == Array(big))
+        #expect(view.count == big.count)
+        #expect(database.view(ofRecord: 3) == nil)
+
+        // It points into the file's own bytes: the view starts where the record does, not in a copy.
+        let fileStart = data.withUnsafeBytes { $0.baseAddress! }
+        let viewStart = view.withUnsafeBytes { $0.baseAddress! }
+        let recordOffset = data.count - (big.count + "last".utf8.count)
+        #expect(viewStart - fileStart == recordOffset)
+    }
+
     @Test func tooShortOrInconsistentDataIsRejected() {
         #expect(throws: PalmDatabase.Failure.notAPalmDatabase) { try PalmDatabase(data: Data()) }
         #expect(throws: PalmDatabase.Failure.notAPalmDatabase) { try PalmDatabase(data: Data(count: 77)) }
