@@ -12,6 +12,11 @@ final class SentenceHitMap: @unchecked Sendable {
     fileprivate func reset() { rects.removeAll() }
     fileprivate func add(_ rect: CGRect, for index: Int) { rects.append((index, rect)) }
 
+    /// The first line of a sentence, in the text's own coordinates, or nil if it hasn't been laid out.
+    func firstLine(of index: Int) -> CGRect? {
+        rects.filter { $0.index == index }.min { $0.rect.minY < $1.rect.minY }?.rect
+    }
+
     /// The sentence under `point`; a click in the gap between lines or past a line's end goes to the closest one.
     func sentence(at point: CGPoint) -> Int? {
         rects.min { distance(from: point, to: $0.rect) < distance(from: point, to: $1.rect) }.flatMap {
@@ -62,14 +67,15 @@ extension Text {
 
 extension View {
     /// Calls `select` with the index of the sentence that was clicked. Dragging still selects text.
-    func onSentenceClick(_ select: @escaping (Int) -> Void) -> some View {
-        modifier(SentenceClick(select: select))
+    /// Pass `map` to keep the layout of the sentences for the caller; otherwise the view keeps its own.
+    func onSentenceClick(map: SentenceHitMap? = nil, _ select: @escaping (Int) -> Void) -> some View {
+        modifier(SentenceClick(select: select, map: map ?? SentenceHitMap()))
     }
 }
 
 private struct SentenceClick: ViewModifier {
     let select: (Int) -> Void
-    @State private var map = SentenceHitMap()
+    let map: SentenceHitMap
 
     func body(content: Content) -> some View {
         content

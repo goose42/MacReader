@@ -42,6 +42,25 @@ struct LibraryViewModelTests {
         return model
     }
 
+    @Test func adjacentItemStepsThroughTheLibraryAndStopsAtEitherEnd() async throws {
+        let model = try makeWebViewModel { _ in webResult() }
+        #expect(model.adjacentItem(1) == nil)
+
+        _ = await model.addWebPage("example.com/a")
+        _ = await model.addWebPage("example.com/b")
+        _ = await model.addWebPage("example.com/c")
+        #expect(model.items.count == 3)
+
+        model.select(model.items[1])
+        #expect(model.adjacentItem(-1) == model.items[0])
+        #expect(model.adjacentItem(1) == model.items[2])
+
+        model.select(model.items[0])
+        #expect(model.adjacentItem(-1) == nil)
+        model.select(model.items[2])
+        #expect(model.adjacentItem(1) == nil)
+    }
+
     @Test func addingAWebAddressFetchesAndStoresThePage() async throws {
         var fetched: [URL] = []
         let model = try makeWebViewModel { url in

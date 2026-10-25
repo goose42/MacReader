@@ -174,6 +174,12 @@ public final class LibraryViewModel {
 
     public var selectedItem: LibraryItem? { items.first { $0.id == selectedItemID } }
 
+    /// The item `offset` places from the selected one (-1 is the one above it), or nil at either end of the library.
+    public func adjacentItem(_ offset: Int) -> LibraryItem? {
+        guard let index = items.firstIndex(where: { $0.id == selectedItemID }), items.indices.contains(index + offset) else { return nil }
+        return items[index + offset]
+    }
+
     /// The saved copy of the selected web page, which opens in a browser to show the page as it was.
     public var selectedPageURL: URL? {
         guard let store, let item = selectedItem, item.sourceKind == .html else { return nil }
