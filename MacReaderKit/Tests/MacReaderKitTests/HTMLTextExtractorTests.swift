@@ -146,4 +146,27 @@ struct HTMLTextExtractorTests {
         #expect(!text.contains("TEASERMARKER"))
         #expect(!text.contains("All rights reserved"))
     }
+
+    @Test func aStoryCollapsedBehindReadMoreIsRecoveredFromItsStructuredData() async throws {
+        let paragraphs = [
+            "The regional government announced on Saturday that the long-delayed harbour bridge would finally open to traffic next month.",
+            "Engineers blamed unusually heavy monsoon rains for the setbacks, adding that corroded bearings had to be replaced before inspection.",
+            "Local fishermen welcomed the news, saying the new crossing would cut their daily commute to the markets by nearly an hour.",
+            "Opposition leaders, however, questioned the final cost, which officials confirmed had risen to almost double the original estimate.",
+        ]
+        let related = (1...8).map { "<p>Other headline \($0) in the latest stories block, long enough to look like real text.</p>" }.joined()
+        let body = paragraphs.joined().replacingOccurrences(of: "'", with: "&#039;")
+        let url = try write("""
+            <html><head><title>Collapsed</title>
+            <style>.readmore ~ * { display: none !important }</style>
+            <script type="application/ld+json">{"@type":"NewsArticle","articleBody":"\(body)"}</script></head><body>
+            <main><div class="story"><p>\(paragraphs[0])</p><button class="readmore">Read more</button>
+            <p>\(paragraphs[1])</p><p>\(paragraphs[2])</p><p>\(paragraphs[3])</p></div>
+            <div class="latest-stories-block">\(related)</div></main></body></html>
+            """, in: try folder())
+        let document = try await HTMLTextExtractor.extract(pageAt: url).document
+        for paragraph in paragraphs { #expect(document.plainText.contains(paragraph)) }
+        #expect(!document.plainText.contains("Other headline"))
+        #expect(document.blocks.filter { $0.kind == .paragraph }.count == 4)
+    }
 }

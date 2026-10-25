@@ -92,4 +92,41 @@ struct ContentArbiterTests {
         #expect(ContentArbiter.choose(payload(readability: nil, body: el("body", [:], paragraph("Hi")))) == nil)
         #expect(ContentArbiter.choose(payload(readability: nil, body: nil)) == nil)
     }
+
+    // MARK: - JSON-LD body
+
+    private func ld(_ body: String) -> String {
+        let escaped = body.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        return "{\"@type\":\"NewsArticle\",\"articleBody\":\"\(escaped)\"}"
+    }
+
+    @Test func jsonLDWinsWhenTheChosenContentMissesTheArticle() throws {
+        let story = Self.words(80, "story")
+        let wrong = paragraph(Self.words(120, "sidebar"))
+        let choice = try #require(ContentArbiter.choose(payload(readability: readability(wrong), body: el("body"), jsonLD: [ld(story)])))
+        #expect(choice.source == .jsonLD)
+    }
+
+    @Test func jsonLDDoesNotReplaceContentThatHasTheArticle() throws {
+        let story = Self.words(80, "story")
+        let page = paragraph(story + " " + Self.words(60, "comment"))
+        let choice = try #require(ContentArbiter.choose(payload(readability: readability(page), body: el("body"), jsonLD: [ld(story)])))
+        #expect(choice.source == .readability)
+    }
+
+    @Test func jsonLDEntitiesAreDecoded() throws {
+        let body = "Yemen&#039;s group said &quot;no&quot; &amp; left. " + Self.words(60)
+        let choice = try #require(ContentArbiter.choose(payload(readability: nil, body: el("body"), jsonLD: [ld(body)])))
+        #expect(choice.content.textContent.contains("Yemen's group said \"no\" & left."))
+    }
+
+    @Test func jsonLDParagraphsFollowThePagesOwnParagraphs() throws {
+        let first = "The first paragraph of the story, long enough to count as one."
+        let second = "The second paragraph of the story, also long enough to count."
+        var page = payload(readability: nil, body: el("body"), jsonLD: [ld(first + second + " Trailing words with no paragraph of their own, but plenty of length to keep.")])
+        page.paragraphs = ["Unrelated advertisement paragraph that is not in the story at all.", first, second]
+        let choice = try #require(ContentArbiter.choose(page))
+        #expect(choice.content.children.map(\.textContent).prefix(2) == [first, second])
+        #expect(choice.content.children.count == 3)
+    }
 }

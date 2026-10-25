@@ -85,11 +85,14 @@ struct ExtractionPayload: Codable, Equatable, Sendable {
     var metadata: RawMetadata
     /// The whole page body after junk was pruned, for the alternatives Readability is checked against.
     var body: HTMLNode?
+    /// The text of every paragraph in the page as saved, including ones a stylesheet hides, in document order.
+    var paragraphs: [String]
 
-    init(readability: ReadabilityResult? = nil, metadata: RawMetadata = RawMetadata(), body: HTMLNode? = nil) {
+    init(readability: ReadabilityResult? = nil, metadata: RawMetadata = RawMetadata(), body: HTMLNode? = nil, paragraphs: [String] = []) {
         self.readability = readability
         self.metadata = metadata
         self.body = body
+        self.paragraphs = paragraphs
     }
 }
 

@@ -50,4 +50,13 @@ struct WebPageExtractorTests {
         let payload = try await WebPageExtractor.extract(html: page("<div></div>"), baseURL: base)
         #expect(payload.readability == nil)
     }
+
+    @Test func reportsParagraphsEvenWhenAStylesheetHidesThem() async throws {
+        let html = page(
+            "<article><p>\(Self.filler)</p><p class=\"later\">HIDDENPARAGRAPH is long enough to be reported as a paragraph.</p><p>\(Self.filler)</p></article>",
+            head: "<style>.later { display: none }</style>")
+        let payload = try await WebPageExtractor.extract(html: html, baseURL: base)
+        #expect(payload.paragraphs.contains { $0.contains("HIDDENPARAGRAPH") })
+        #expect(payload.body?.textContent.contains("HIDDENPARAGRAPH") == false)
+    }
 }

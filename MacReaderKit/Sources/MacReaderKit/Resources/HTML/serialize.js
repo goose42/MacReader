@@ -39,6 +39,8 @@ function mrMetadata(doc) {
 }
 
 function mrExtract() {
+    // Before pruning: text the page's stylesheet hides is still part of the story when its structured data says so.
+    const paragraphs = Array.from(document.querySelectorAll("p"), (p) => p.textContent.replace(/\s+/g, " ").trim()).filter((text) => text.length >= 25);
     mrPrepare(document);
     const metadata = mrMetadata(document);
     const article = new Readability(document.cloneNode(true), { keepClasses: true, serializer: (element) => element }).parse();
@@ -50,5 +52,5 @@ function mrExtract() {
         siteName: article.siteName,
         publishedTime: article.publishedTime,
     };
-    return JSON.stringify({ readability, metadata, body: mrNode(document.body) });
+    return JSON.stringify({ readability, metadata, body: mrNode(document.body), paragraphs });
 }
