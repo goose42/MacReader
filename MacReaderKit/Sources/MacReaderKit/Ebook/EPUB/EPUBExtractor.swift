@@ -20,10 +20,13 @@ enum EPUBExtractor {
         let navigation = EPUBNavigation.load(from: container, package: package)
         var chapters: [HTMLNode] = []
         for item in package.spine where chapterTypes.contains(item.mediaType) {
-            guard let data = try? container.data(at: item.path), let body = await body(of: data) else { continue }
+            guard let data = try? container.data(at: item.path), let body = await ChapterReader.body(of: data) else { continue }
             chapters.append(HTMLNode(
                 tag: "section", attributes: ["data-mr-chapter": navigation.title(forChapterAt: item.path) ?? ""],
-                children: body.children.map { resolvingImages(in: $0, chapterPath: item.path) }))
+                children: body.children.map { node in
+                    // Picture addresses written relative to a chapter become paths from the book's root.
+                    ChapterReader.resolvingPictures(in: node) { EPUBPath.resolve($0, relativeTo: item.path) }
+                }))
         }
 
         let title = package.title ?? url.deletingPathExtension().lastPathComponent
@@ -40,22 +43,5 @@ enum EPUBExtractor {
             excerpt: package.summary)
         return EbookExtractor.Result(
             document: ReaderDocument(title: title, blocks: built.blocks, metadata: metadata), images: built.images, format: .epub)
-    }
-
-    /// A chapter's body: read as XML when it is, otherwise repaired by the browser's parser as a page would be.
-    @MainActor
-    private static func body(of data: Data) async -> HTMLNode? {
-        if let document = try? XHTMLParser.parse(data) { return document.body }
-        return try? await WebPageExtractor.serializeBody(html: HTMLSource.decode(data), baseURL: URL(fileURLWithPath: "/")).body
-    }
-
-    /// Picture addresses written relative to a chapter become paths from the book's root, which is how they are read.
-    private static func resolvingImages(in node: HTMLNode, chapterPath: String) -> HTMLNode {
-        var node = node
-        if node.tag == "img", let source = node.attributes["src"], let path = EPUBPath.resolve(source, relativeTo: chapterPath) {
-            node.attributes["src"] = path
-        }
-        node.children = node.children.map { resolvingImages(in: $0, chapterPath: chapterPath) }
-        return node
     }
 }

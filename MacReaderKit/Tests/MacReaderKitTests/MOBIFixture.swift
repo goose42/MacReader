@@ -22,6 +22,15 @@ enum MOBIFixture {
         var textRecords: [Data]?
     }
 
+    /// The record numbers of a KF8 book's indexes, counted from its own first record.
+    struct KF8Indexes {
+        var fdst = 0xFFFF_FFFF
+        var fdstCount = 0
+        var ncx = 0xFFFF_FFFF
+        var fragment = 0xFFFF_FFFF
+        var skeleton = 0xFFFF_FFFF
+    }
+
     static func exth(_ type: Int, _ text: String) -> (type: Int, value: Data) { (type, Data(text.utf8)) }
 
     static func exth(_ type: Int, number: Int) -> (type: Int, value: Data) {
@@ -61,25 +70,23 @@ enum MOBIFixture {
         return trailer
     }
 
+    /// The text cut into records of `size` bytes, compressed as `compression` says, with trailing data added.
+    static func textRecords(_ text: Data, size: Int, compression: Int, extraDataFlags: Int) -> [Data] {
+        stride(from: 0, to: max(text.count, 1), by: size).map { start in
+            let chunk = Data(text[start..<min(start + size, text.count)])
+            return (compression == 2 ? palmDOC(chunk) : chunk) + trailer(for: extraDataFlags)
+        }
+    }
+
     static func build(_ spec: Spec) -> Data {
-        var textChunks: [Data] = []
-        for start in stride(from: 0, to: max(spec.text.count, 1), by: spec.recordSize) {
-            textChunks.append(Data(spec.text[start..<min(start + spec.recordSize, spec.text.count)]))
-        }
-        var textRecords: [Data]
-        if let override = spec.textRecords {
-            textRecords = override
-        } else {
-            textRecords = textChunks.map { chunk in
-                switch spec.compression {
-                case 2: palmDOC(chunk)
-                default: chunk
-                }
-            }
-        }
+        PalmFixture.database(name: "Test_Book", type: "BOOK", creator: "MOBI", records: records(spec))
+    }
+
+    static func records(_ spec: Spec) -> [Data] {
+        let textRecords = spec.textRecords.map { $0.map { $0 + trailer(for: spec.extraDataFlags) } }
+            ?? self.textRecords(spec.text, size: spec.recordSize, compression: spec.compression, extraDataFlags: spec.extraDataFlags)
 
         var records: [Data] = [Data()]
-        textRecords = textRecords.map { $0 + trailer(for: spec.extraDataFlags) }
         records += textRecords
         let huffmanRecord = records.count
         var huffmanCount = 0
@@ -93,15 +100,16 @@ enum MOBIFixture {
         records.append(Data("EOF".utf8))
 
         records[0] = firstRecord(
-            spec, textRecordCount: textRecords.count, huffmanRecord: huffmanRecord, huffmanCount: huffmanCount,
-            firstImage: spec.images.isEmpty ? 0xFFFF_FFFF : firstImage)
-        return PalmFixture.database(name: "Test_Book", type: "BOOK", creator: "MOBI", records: records)
+            spec, textRecordCount: textRecords.count, textLength: spec.text.count, huffmanRecord: huffmanRecord,
+            huffmanCount: huffmanCount, firstImage: spec.images.isEmpty ? 0xFFFF_FFFF : firstImage)
+        return records
     }
 
-    private static func firstRecord(
-        _ spec: Spec, textRecordCount: Int, huffmanRecord: Int, huffmanCount: Int, firstImage: Int
+    static func firstRecord(
+        _ spec: Spec, textRecordCount: Int, textLength: Int, huffmanRecord: Int, huffmanCount: Int, firstImage: Int,
+        kf8: KF8Indexes? = nil
     ) -> Data {
-        let headerLength = 232
+        let headerLength = kf8 == nil ? 232 : 264
         let name = Data(spec.title.utf8)
 
         var exth = Data()
@@ -125,7 +133,7 @@ enum MOBIFixture {
             for index in 0..<size { record[offset + index] = UInt8((value >> (8 * (size - 1 - index))) & 0xFF) }
         }
         put(spec.compression, at: 0, size: 2)
-        put(spec.text.count, at: 4, size: 4)
+        put(textLength, at: 4, size: 4)
         put(textRecordCount, at: 8, size: 2)
         put(spec.recordSize, at: 10, size: 2)
         put(spec.encryption, at: 12, size: 2)
@@ -141,6 +149,15 @@ enum MOBIFixture {
         put(huffmanCount, at: 116, size: 4)
         put(spec.exth.isEmpty ? 0 : 0x40, at: 128, size: 4)
         put(spec.extraDataFlags, at: 0xF2, size: 2)
+        if let kf8 {
+            put(kf8.fdst, at: 0xC0, size: 4)
+            put(kf8.fdstCount, at: 0xC4, size: 4)
+            put(kf8.ncx, at: 0xF4, size: 4)
+            put(kf8.fragment, at: 0xF8, size: 4)
+            put(kf8.skeleton, at: 0xFC, size: 4)
+            put(0xFFFF_FFFF, at: 0x100, size: 4)
+            put(0xFFFF_FFFF, at: 0x104, size: 4)
+        }
         record.append(exth)
         record.append(name)
         return record
