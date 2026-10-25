@@ -45,7 +45,7 @@ enum XHTMLParser {
     /// XML knows five entities; XHTML files use the HTML ones (`&nbsp;`) and rely on a DTD the parser never fetches.
     /// They are rewritten as numeric references, and the prolog's encoding is set to what the text now is.
     /// A name nobody can resolve is an error, because the XML parser would silently drop it along with its text.
-    private static func resolveEntities(in data: Data) throws -> Data {
+    static func resolveEntities(in data: Data) throws -> Data {
         guard var text = String(data: data, encoding: .utf8) else { return data }
         if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
         if text.contains("&") {
