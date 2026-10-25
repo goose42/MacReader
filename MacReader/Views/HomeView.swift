@@ -26,7 +26,7 @@ struct HomeView: View {
         }
         // Folders are allowed so a saved page's "…_files" folder can be chosen along with it, which is what lets the
         // sandboxed app read its images.
-        .fileImporter(isPresented: $isImporting, allowedContentTypes: [.pdf, .html, .folder], allowsMultipleSelection: true) { result in
+        .fileImporter(isPresented: $isImporting, allowedContentTypes: UTType.libraryDocuments, allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { Task { await library.addDocuments(urls) } }
         }
         .sheet(isPresented: $isAddingWebPage) {
@@ -66,13 +66,13 @@ struct HomeView: View {
                     Label {
                         VStack(alignment: .leading) {
                             Text(item.title).lineLimit(2)
-                            Text(subtitle(of: item))
+                            Text(item.subtitle)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
                     } icon: {
-                        Image(systemName: item.sourceKind == .html ? "globe" : "doc.text")
+                        Image(systemName: item.symbolName)
                     }
                     if let progress = library.progress(of: item) {
                         Spacer()
@@ -97,7 +97,7 @@ struct HomeView: View {
                     ContentUnavailableView {
                         Label("No Documents", systemImage: "books.vertical")
                     } description: {
-                        Text("Add a PDF, a saved web page, or the address of an article to start reading.")
+                        Text("Add a PDF, an ebook, a saved web page, or the address of an article to start reading.")
                     } actions: {
                         Button("Add File…", systemImage: "doc") { isImporting = true }
                         Button("Add Web Page from URL…", systemImage: "link") { addWebPage() }
@@ -118,7 +118,7 @@ struct HomeView: View {
                 ReaderView(
                     document: document,
                     initialPosition: library.selectedPosition,
-                    imageScale: library.selectedItem?.sourceKind == .html ? 1 : 2,
+                    imageScale: library.selectedItem?.sourceKind == .pdf ? 2 : 1,
                     originalPageURL: library.selectedPageURL,
                     imageURL: { library.selectedImageURL(named: $0) },
                     onPositionChange: { library.saveReadingPosition($0) })
@@ -138,7 +138,7 @@ struct HomeView: View {
                 addWebPage(prefilledWith: web.absoluteString)
                 return true
             }
-            let accepted = urls.filter { ["pdf", "html", "htm"].contains($0.pathExtension.lowercased()) || $0.hasDirectoryPath }
+            let accepted = urls.filter(LibraryViewModel.canAdd)
             guard !accepted.isEmpty else { return false }
             Task { await library.addDocuments(accepted) }
             return true
@@ -154,11 +154,6 @@ struct HomeView: View {
     private func addWebPage(prefilledWith address: String = "") {
         droppedAddress = address
         isAddingWebPage = true
-    }
-
-    private func subtitle(of item: MacReaderKit.LibraryItem) -> String {
-        let date = item.dateAdded.formatted(.dateTime.month().day().year())
-        return item.siteName.map { "\($0) · \(date)" } ?? date
     }
 
     private var errorBinding: Binding<Bool> {

@@ -90,6 +90,17 @@ struct LibraryViewModelEbookTests {
         #expect(model.errorMessage == nil)
     }
 
+    @Test func knowsWhichFilesTheLibraryCanTake() throws {
+        for name in ["a.pdf", "A.PDF", "a.html", "a.htm", "a.epub", "a.mobi", "a.azw", "a.AZW3", "a.prc"] {
+            #expect(LibraryViewModel.canAdd(URL(fileURLWithPath: "/tmp/\(name)")), "\(name)")
+        }
+        for name in ["a.txt", "a.docx", "a.zip", "a"] {
+            #expect(!LibraryViewModel.canAdd(URL(fileURLWithPath: "/tmp/\(name)")), "\(name)")
+        }
+        // Folders ride along with a page's images, or are an unpacked book.
+        #expect(LibraryViewModel.canAdd(try makeFolder()))
+    }
+
     // MARK: Failures
 
     @Test func aProtectedBookIsRefusedWithAnExplanation() async throws {

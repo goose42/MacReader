@@ -104,6 +104,14 @@ public final class LibraryViewModel {
         reload()
     }
 
+    private static let documentExtensions: Set<String> = ["pdf", "html", "htm", "epub", "mobi", "azw", "azw3", "prc"]
+
+    /// Whether `url` is something `addDocuments` takes: a PDF, a web page, an ebook, or a folder (which may hold a page's
+    /// images, or be an unpacked book).
+    public static func canAdd(_ url: URL) -> Bool {
+        documentExtensions.contains(url.pathExtension.lowercased()) || isFolder(url)
+    }
+
     /// Fetches the page at a typed or pasted address and adds it to the library. Returns the new item, or nil with
     /// `webPageError` set; a failure here is shown by the address sheet, not the library's alert.
     public func addWebPage(_ input: String) async -> LibraryItem? {
