@@ -27,6 +27,8 @@ enum EPUBFixture {
         var encryptionXML: String?
         /// Replaces the generated navigation document or NCX.
         var navigationOverride: String?
+        /// Rewrites the generated package document, for markup the spec has no field for.
+        var editPackage: ((String) -> String)?
     }
 
     static let packagePath = "OEBPS/content.opf"
@@ -55,7 +57,7 @@ enum EPUBFixture {
                   <rootfiles><rootfile full-path="\(packagePath)" media-type="application/oebps-package+xml"/></rootfiles>
                 </container>
                 """.utf8)),
-            (packagePath, Data(package(spec).utf8)),
+            (packagePath, Data((spec.editPackage?(package(spec)) ?? package(spec)).utf8)),
         ]
         for chapter in spec.chapters {
             files.append(("OEBPS/\(chapter.file)", Data(xhtml(chapter.body, title: chapter.navTitle ?? "Chapter").utf8)))
