@@ -4,8 +4,6 @@ import SwiftUI
 /// A minimal, read-only reading surface in the spirit of Safari Reader.
 struct ReaderView: View {
     let document: ReaderDocument
-    /// False while the sidebar has keyboard focus, so its arrow keys keep moving the selection.
-    let stepsWithArrowKeys: Bool
     /// How many pixels of a figure make a point: PDF figures are rendered at 2x, web images are shown at their size.
     let imageScale: Double
     /// The saved copy of the page this document was read from, if it came from the web.
@@ -17,9 +15,17 @@ struct ReaderView: View {
     let onPositionChange: (SentenceNavigator.Position) -> Void
     @AppStorage("readerFontSize") private var fontSize = 20.0
     @AppStorage("readerColumnWidth") private var columnWidth = ReaderColumnWidth.narrow
-    @AppStorage("highlightColor") private var highlightColor = ColorChoice.automatic
-    @AppStorage("dimmedTextColor") private var dimmedTextColor = ColorChoice.automatic
+    @AppStorage("highlightColor") private var highlightColor = AppearanceColor.automatic
+    @AppStorage("dimmedTextColor") private var dimmedTextColor = AppearanceColor.automatic
+    @AppStorage("textColor") private var textColor = AppearanceColor.automatic
+    @AppStorage("backgroundColor") private var backgroundColor = AppearanceColor.automatic
     @AppStorage("dimsSurroundingText") private var dimsSurroundingText = true
+    @AppStorage("fixedHighlighting") private var fixedHighlighting = true
+    @AppStorage("fixedHighlightLines") private var fixedHighlightLines = FixedHighlightScroll.defaultLines
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var scrollPosition = ScrollPosition()
+    @State private var scrollMetrics = ScrollMetrics()
+    @State private var sentenceLayout = SentenceLayout()
     @State private var isShowingContents = false
     @FocusState private var isFocused: Bool
     @State private var navigator: SentenceNavigator
@@ -29,7 +35,6 @@ struct ReaderView: View {
     init(
         document: ReaderDocument,
         initialPosition: SentenceNavigator.Position? = nil,
-        stepsWithArrowKeys: Bool = true,
         imageScale: Double = 2,
         originalPageURL: URL? = nil,
         imageURL: @escaping (String) -> URL?,
@@ -37,7 +42,6 @@ struct ReaderView: View {
     ) {
         self.document = document
         self.initialPosition = initialPosition
-        self.stepsWithArrowKeys = stepsWithArrowKeys
         self.imageScale = imageScale
         self.originalPageURL = originalPageURL
         self.imageURL = imageURL
@@ -62,32 +66,42 @@ struct ReaderView: View {
                     }
                 }
                 .textSelection(.enabled)
+                .foregroundStyle(textChoice.readingText)
                 .environment(\.layoutDirection, document.metadata?.isRightToLeft == true ? .rightToLeft : .leftToRight)
                 .frame(maxWidth: columnWidth.maxWidth ?? .infinity, alignment: .leading)
                 .padding(.horizontal, columnWidth.horizontalPadding)
                 .padding(.vertical, 40)
                 .frame(maxWidth: .infinity)
             }
-            .background(.background)
+            .scrollPosition($scrollPosition)
+            .onScrollGeometryChange(for: ScrollMetrics.self) { geometry in
+                ScrollMetrics(
+                    offset: geometry.contentOffset.y, viewportHeight: geometry.containerSize.height,
+                    contentHeight: geometry.contentSize.height, insetTop: geometry.contentInsets.top,
+                    insetBottom: geometry.contentInsets.bottom)
+            } action: { _, metrics in
+                scrollMetrics = metrics
+            }
+            .background(backgroundChoice.pageBackground)
             // The arrows are handled here rather than as menu shortcuts, which flash the "Go" menu title on every press.
             .focusable()
             .focused($isFocused)
             .focusEffectDisabled()
             .onKeyPress(.downArrow) { navigator.next(); return .handled }
             .onKeyPress(.upArrow) { navigator.previous(); return .handled }
-            .focusedSceneValue(\.sentenceNavigation, stepsWithArrowKeys && !isShowingContents
+            .focusedSceneValue(\.sentenceNavigation, !isShowingContents
                 ? SentenceNavigation(next: { navigator.next() }, previous: { navigator.previous() })
                 : nil)
-            .onAppear { restoreScroll(proxy) }
+            .onAppear { isFocused = true; restoreScroll(proxy) }
             .onChange(of: document) {
                 navigator = SentenceNavigator(document: document, startingAt: initialPosition)
+                isFocused = true
                 restoreScroll(proxy)
             }
             .onChange(of: navigator.current) { _, position in
                 guard let position else { return }
                 onPositionChange(position)
-                let scroll = { proxy.scrollTo(position.blockID, anchor: UnitPoint(x: 0.5, y: navigator.scrollAnchor)) }
-                if reduceMotion { scroll() } else { withAnimation { scroll() } }
+                if reduceMotion { reveal(position, with: proxy) } else { withAnimation { reveal(position, with: proxy) } }
                 if let sentence = sentenceText(at: position) {
                     AccessibilityNotification.Announcement(sentence).post()
                 }
@@ -155,8 +169,42 @@ struct ReaderView: View {
     /// Brings the saved sentence into view without animation, as the document opens.
     private func restoreScroll(_ proxy: ScrollViewProxy) {
         guard let position = navigator.current, position != SentenceNavigator.Position(blockID: 0, sentence: 0) else { return }
-        proxy.scrollTo(position.blockID, anchor: UnitPoint(x: 0.5, y: navigator.scrollAnchor))
+        reveal(position, with: proxy)
     }
+
+    /// Scrolls to the sentence: with Fixed Highlighting, to a set number of lines below the top; otherwise to the
+    /// sentence's place within its block.
+    private func reveal(_ position: SentenceNavigator.Position, with proxy: ScrollViewProxy) {
+        guard fixedHighlighting else {
+            proxy.scrollTo(position.blockID, anchor: UnitPoint(x: 0.5, y: navigator.scrollAnchor))
+            return
+        }
+        if !scrollToFixedPlace(position) {
+            // The block isn't laid out yet (the stack is lazy), so bring it on screen first and place it next pass.
+            proxy.scrollTo(position.blockID, anchor: .top)
+            DispatchQueue.main.async { _ = scrollToFixedPlace(position) }
+        }
+    }
+
+    /// Returns false when the sentence's layout isn't known yet.
+    private func scrollToFixedPlace(_ position: SentenceNavigator.Position) -> Bool {
+        guard let layout = sentenceLayout.layout(of: position.blockID, sentence: position.sentence) else { return false }
+        let metrics = scrollMetrics
+        let target = FixedHighlightScroll.targetOffset(
+            sentenceTop: layout.top - metrics.insetTop,
+            lineHeight: layout.lineHeight + fontSize * 0.4,
+            lines: fixedHighlightLines,
+            currentOffset: metrics.offset + metrics.insetTop,
+            viewportHeight: metrics.viewportHeight - metrics.insetTop - metrics.insetBottom,
+            contentHeight: metrics.contentHeight)
+        scrollPosition.scrollTo(y: target - metrics.insetTop)
+        return true
+    }
+
+    private var textChoice: ColorChoice { textColor.resolved(colorScheme) }
+    private var backgroundChoice: ColorChoice { backgroundColor.resolved(colorScheme) }
+    private var highlightChoice: ColorChoice { highlightColor.resolved(colorScheme) }
+    private var dimmedChoice: ColorChoice { dimmedTextColor.resolved(colorScheme) }
 
     @ViewBuilder
     private func blockView(_ block: ReaderDocument.Block) -> some View {
@@ -225,7 +273,7 @@ struct ReaderView: View {
         case .footnote(let marker):
             HStack(alignment: .firstTextBaseline, spacing: fontSize * 0.5) {
                 Text(marker).foregroundStyle(.secondary)
-                Text(block.text).foregroundStyle(isDimming ? dimmedTextColor.dimmedText : .primary)
+                Text(block.text).foregroundStyle(isDimming ? dimmedChoice.dimmedText : textChoice.readingText)
             }
             .font(.system(size: fontSize * 0.8, design: .monospaced))
             .padding(fontSize * 0.6)
@@ -255,14 +303,19 @@ struct ReaderView: View {
         case let numbering?:
             (Text(numbering.label).monospacedDigit().foregroundStyle(.secondary) + Text(" ") + Text(highlighted(block), sentences: block.sentences))
                 .font(font)
-                .onSentenceClick { isFocused = true; navigator.move(to: .init(blockID: block.id, sentence: $0)) }
+                .trackingSentences(of: block, in: sentenceLayout) { select($0, in: block) }
         }
     }
 
     /// The block's text, where clicking a sentence moves the reading cursor to it.
     private func sentenceText(_ block: ReaderDocument.Block) -> some View {
         Text(highlighted(block), sentences: block.sentences)
-            .onSentenceClick { isFocused = true; navigator.move(to: .init(blockID: block.id, sentence: $0)) }
+            .trackingSentences(of: block, in: sentenceLayout) { select($0, in: block) }
+    }
+
+    private func select(_ sentence: Int, in block: ReaderDocument.Block) {
+        isFocused = true
+        navigator.move(to: .init(blockID: block.id, sentence: sentence))
     }
 
     /// Whether text outside the current sentence is dimmed, which only makes sense while there is a current sentence.
@@ -271,12 +324,12 @@ struct ReaderView: View {
     /// The block's text with the navigator's current sentence marked, if it falls in this block, and the rest dimmed.
     private func highlighted(_ block: ReaderDocument.Block) -> AttributedString {
         var text = AttributedString(block.text)
-        if isDimming { text.foregroundColor = dimmedTextColor.dimmedText }
+        if isDimming { text.foregroundColor = dimmedChoice.dimmedText }
         guard let utf16 = navigator.highlight(in: block.id),
               let range = Range(NSRange(location: utf16.lowerBound, length: utf16.count), in: text)
         else { return text }
-        text[range].backgroundColor = highlightColor.highlightFill
-        text[range].foregroundColor = .primary
+        text[range].backgroundColor = highlightChoice.highlightFill
+        text[range].foregroundColor = textChoice.readingText
         if differentiateWithoutColor { text[range].underlineStyle = .single }
         return text
     }
@@ -307,6 +360,55 @@ struct ReaderView: View {
                     scrollTo(id)
                 }
             }
+    }
+}
+
+/// How far the reader is scrolled, for placing the current sentence.
+private struct ScrollMetrics: Equatable {
+    var offset = 0.0
+    var viewportHeight = 0.0
+    var contentHeight = 0.0
+    var insetTop = 0.0
+    var insetBottom = 0.0
+}
+
+/// Where the sentences of the blocks on screen were laid out, in the scroll view's coordinates.
+/// A reference type that the views write to as they lay out, so recording a frame doesn't redraw anything.
+@MainActor
+private final class SentenceLayout {
+    private struct Entry {
+        let map: SentenceHitMap
+        var top: Double?
+    }
+    private var entries: [Int: Entry] = [:]
+
+    func map(for blockID: Int) -> SentenceHitMap {
+        if let entry = entries[blockID] { return entry.map }
+        let map = SentenceHitMap()
+        entries[blockID] = Entry(map: map)
+        return map
+    }
+
+    func setTop(_ top: Double, for blockID: Int) { entries[blockID]?.top = top }
+    func forget(_ blockID: Int) { entries[blockID] = nil }
+
+    /// The top of the sentence's first line and that line's height, or nil if its block isn't on screen.
+    func layout(of blockID: Int, sentence: Int) -> (top: Double, lineHeight: Double)? {
+        guard let entry = entries[blockID], let top = entry.top, let line = entry.map.firstLine(of: sentence) else { return nil }
+        return (top + line.minY, line.height)
+    }
+}
+
+extension View {
+    /// Selects the clicked sentence and reports where the block's sentences sit, for Fixed Highlighting.
+    fileprivate func trackingSentences(
+        of block: ReaderDocument.Block, in layout: SentenceLayout, select: @escaping (Int) -> Void
+    ) -> some View {
+        onSentenceClick(map: layout.map(for: block.id), select)
+            .onGeometryChange(for: Double.self) { $0.frame(in: .scrollView).minY } action: {
+                layout.setTop($0, for: block.id)
+            }
+            .onDisappear { layout.forget(block.id) }
     }
 }
 

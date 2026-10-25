@@ -10,7 +10,7 @@ struct HomeView: View {
     @State private var droppedAddress = ""
     @State private var selection: MacReaderKit.LibraryItem.ID?
     @State private var pendingDeletion: MacReaderKit.LibraryItem?
-    @FocusState private var isSidebarFocused: Bool
+    @FocusedValue(\.sentenceNavigation) private var sentenceNavigation
 
     var body: some View {
         Group {
@@ -78,7 +78,9 @@ struct HomeView: View {
                     Button("Delete…", systemImage: "trash", role: .destructive) { pendingDeletion = item }
                 }
             }
-            .focused($isSidebarFocused)
+            // Once a document is open the arrows read it; moving between documents is ⌥⌘↑ / ⌥⌘↓ in the Go menu.
+            .onKeyPress(.downArrow) { step(sentenceNavigation?.next) }
+            .onKeyPress(.upArrow) { step(sentenceNavigation?.previous) }
             .onDeleteCommand {
                 pendingDeletion = library.items.first { $0.id == selection }
             }
@@ -110,7 +112,6 @@ struct HomeView: View {
                 ReaderView(
                     document: document,
                     initialPosition: library.selectedPosition,
-                    stepsWithArrowKeys: !isSidebarFocused,
                     imageScale: library.selectedItem?.sourceKind == .html ? 1 : 2,
                     originalPageURL: library.selectedPageURL,
                     imageURL: { library.selectedImageURL(named: $0) },
@@ -119,6 +120,9 @@ struct HomeView: View {
                 ContentUnavailableView("Select a Document", systemImage: "doc.text")
             }
         }
+        .focusedSceneValue(\.documentNavigation, DocumentNavigation(
+            next: library.adjacentItem(1).map { item in { selection = item.id } },
+            previous: library.adjacentItem(-1).map { item in { selection = item.id } }))
         .onChange(of: selection) { _, id in
             if let item = library.items.first(where: { $0.id == id }) { library.select(item) }
         }
@@ -133,6 +137,12 @@ struct HomeView: View {
             Task { await library.addDocuments(accepted) }
             return true
         }
+    }
+
+    private func step(_ action: (() -> Void)?) -> KeyPress.Result {
+        guard let action else { return .ignored }
+        action()
+        return .handled
     }
 
     private func addWebPage(prefilledWith address: String = "") {

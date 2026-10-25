@@ -20,7 +20,18 @@ extension ColorChoice {
     }
 }
 
+extension AppearanceColor {
+    /// The choice for the current appearance.
+    func resolved(_ scheme: ColorScheme) -> ColorChoice { choice(isDark: scheme == .dark) }
+}
+
 extension ColorChoice {
+    /// The color of reading text; the system primary color unless customized.
+    var readingText: Color { color(automatic: .primary) }
+
+    /// The page behind the text; the system text background unless customized.
+    var pageBackground: Color { color(automatic: Color(nsColor: .textBackgroundColor)) }
+
     /// The tint drawn behind the current sentence; the system accent color unless customized.
     var highlightFill: Color { color(automatic: .accentColor).opacity(0.25) }
 

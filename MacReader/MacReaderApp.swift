@@ -9,6 +9,7 @@ struct MacReaderApp: App {
     @State private var isAddingWebPage = false
     @AppStorage("readerColumnWidth") private var columnWidth = ReaderColumnWidth.narrow
     @FocusedValue(\.sentenceNavigation) private var sentenceNavigation
+    @FocusedValue(\.documentNavigation) private var documentNavigation
 
     var body: some Scene {
         WindowGroup {
@@ -35,6 +36,13 @@ struct MacReaderApp: App {
                     .disabled(sentenceNavigation == nil)
                 Button("Previous Sentence") { sentenceNavigation?.previous() }
                     .disabled(sentenceNavigation == nil)
+                Divider()
+                Button("Next Document") { documentNavigation?.next?() }
+                    .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+                    .disabled(documentNavigation?.next == nil)
+                Button("Previous Document") { documentNavigation?.previous?() }
+                    .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+                    .disabled(documentNavigation?.previous == nil)
             }
         }
         Settings { SettingsView() }
