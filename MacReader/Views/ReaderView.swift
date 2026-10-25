@@ -465,36 +465,62 @@ private struct TableView: View {
     }
 }
 
-/// A picture lifted from the PDF, framed so it reads as separate from the text around it.
+/// A picture from the document, framed so it reads as separate from the text around it. It is decoded at the size it is
+/// shown, and held only while it is on screen; `FigureLoader` keeps a bounded few for scrolling back.
 private struct FigureView: View {
     let url: URL?
     let aspectRatio: Double
     /// Pixels per point: PDF figures are rendered at 2x, so half their pixel width is their natural size.
     let scale: Double
 
+    @State private var figure: LoadedFigure?
+    @State private var isMissing = false
+
+    /// Sharp across the widest column on a Retina display; wider pictures are decoded smaller than they are stored.
+    private static let maxPixelWidth = 2400
+
     var body: some View {
-        if let url, let image = NSImage(contentsOf: url) {
-            Image(nsImage: image)
+        content
+            .task(id: url) { await load() }
+            .onDisappear { figure = nil }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let figure {
+            Image(figure.image, scale: 1, label: Text("Image from the document"))
                 .resizable()
                 .aspectRatio(aspectRatio, contentMode: .fit)
-                .frame(maxWidth: pixelWidth(of: image) / scale)
+                .frame(maxWidth: Double(figure.pixelWidth) / scale)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityLabel("Image from the document")
-        } else {
+        } else if isMissing {
             Label("Image unavailable", systemImage: "photo")
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, minHeight: 80)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+        } else {
+            // Holds the picture's place while it decodes, so the text below doesn't jump.
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.quaternary)
+                .aspectRatio(aspectRatio, contentMode: .fit)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityHidden(true)
         }
     }
-}
 
-extension FigureView {
-    /// The image's width in pixels, whatever resolution its file claims to be.
-    fileprivate func pixelWidth(of image: NSImage) -> Double {
-        Double(image.representations.map(\.pixelsWide).max() ?? Int(image.size.width))
+    private func load() async {
+        guard let url else {
+            isMissing = true
+            return
+        }
+        let width = Self.maxPixelWidth
+        let loaded = await Task.detached(priority: .userInitiated) {
+            FigureLoader.shared.figure(at: url, maxPixelWidth: width)
+        }.value
+        figure = loaded
+        isMissing = loaded == nil
     }
 }
 
