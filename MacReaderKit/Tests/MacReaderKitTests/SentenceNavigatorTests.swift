@@ -111,4 +111,35 @@ struct SentenceNavigatorTests {
         let data = try JSONEncoder().encode(position)
         #expect(try JSONDecoder().decode(Position.self, from: data) == position)
     }
+
+    @Test func progressIsZeroOnTheFirstSentence() {
+        #expect(SentenceNavigator(document: document).progress == 0)
+    }
+
+    @Test func progressIsOneOnTheLastSentence() {
+        var navigator = SentenceNavigator(document: document)
+        while navigator.next() {}
+        #expect(navigator.progress == 1)
+    }
+
+    @Test func progressIsWeightedByTextLength() {
+        let weighted = ReaderDocument(title: "Doc", blocks: [
+            .init(id: 0, kind: .paragraph, text: "Hi."),
+            .init(id: 1, kind: .paragraph, text: "A much longer second sentence."),
+            .init(id: 2, kind: .paragraph, text: "End."),
+        ])
+        var navigator = SentenceNavigator(document: weighted)
+        navigator.next()
+        let lastOffset = Double("Hi.".utf16.count + "A much longer second sentence.".utf16.count)
+        #expect(navigator.progress == Double("Hi.".utf16.count) / lastOffset)
+    }
+
+    @Test func progressIsZeroForAnEmptyDocument() {
+        #expect(SentenceNavigator(document: ReaderDocument(title: "Doc", blocks: [])).progress == 0)
+    }
+
+    @Test func progressIsOneForASingleSentence() {
+        let single = ReaderDocument(title: "Doc", blocks: [.init(id: 0, kind: .paragraph, text: "Only.")])
+        #expect(SentenceNavigator(document: single).progress == 1)
+    }
 }
