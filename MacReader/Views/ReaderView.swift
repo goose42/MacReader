@@ -26,6 +26,7 @@ struct ReaderView: View {
     @State private var scrollPosition = ScrollPosition()
     @State private var scrollMetrics = ScrollMetrics()
     @State private var sentenceLayout = SentenceLayout()
+    @State private var pendingPlacement: Task<Void, Never>?
     @State private var isShowingContents = false
     @FocusState private var isFocused: Bool
     @State private var navigator: SentenceNavigator
@@ -175,20 +176,36 @@ struct ReaderView: View {
     /// Scrolls to the sentence: with Fixed Highlighting, to a set number of lines below the top; otherwise to the
     /// sentence's place within its block.
     private func reveal(_ position: SentenceNavigator.Position, with proxy: ScrollViewProxy) {
+        pendingPlacement?.cancel()
         guard fixedHighlighting else {
             proxy.scrollTo(position.blockID, anchor: UnitPoint(x: 0.5, y: navigator.scrollAnchor))
             return
         }
-        if !scrollToFixedPlace(position) {
-            // The block isn't laid out yet (the stack is lazy), so bring it on screen first and place it next pass.
-            proxy.scrollTo(position.blockID, anchor: .top)
-            DispatchQueue.main.async { _ = scrollToFixedPlace(position) }
+        if let target = fixedTarget(for: position) {
+            scrollPosition.scrollTo(y: target)
+            return
+        }
+        // The block isn't laid out yet (the stack is lazy, and a tall picture can sit between), so bring it on screen
+        // and place the sentence once its position has settled. Until then the block would be left at the top.
+        proxy.scrollTo(position.blockID, anchor: .top)
+        pendingPlacement = Task {
+            var previous: Double?
+            for _ in 0..<60 {
+                try? await Task.sleep(for: .milliseconds(16))
+                if Task.isCancelled { return }
+                guard let target = fixedTarget(for: position) else { continue }
+                if let previous, abs(previous - target) < 0.5 {
+                    scrollPosition.scrollTo(y: target)
+                    return
+                }
+                previous = target
+            }
         }
     }
 
-    /// Returns false when the sentence's layout isn't known yet.
-    private func scrollToFixedPlace(_ position: SentenceNavigator.Position) -> Bool {
-        guard let layout = sentenceLayout.layout(of: position.blockID, sentence: position.sentence) else { return false }
+    /// The scroll offset that places the sentence, or nil when its layout isn't known yet.
+    private func fixedTarget(for position: SentenceNavigator.Position) -> Double? {
+        guard let layout = sentenceLayout.layout(of: position.blockID, sentence: position.sentence) else { return nil }
         let metrics = scrollMetrics
         let target = FixedHighlightScroll.targetOffset(
             sentenceTop: layout.top - metrics.insetTop,
@@ -197,8 +214,7 @@ struct ReaderView: View {
             currentOffset: metrics.offset + metrics.insetTop,
             viewportHeight: metrics.viewportHeight - metrics.insetTop - metrics.insetBottom,
             contentHeight: metrics.contentHeight)
-        scrollPosition.scrollTo(y: target - metrics.insetTop)
-        return true
+        return target - metrics.insetTop
     }
 
     private var textChoice: ColorChoice { textColor.resolved(colorScheme) }
