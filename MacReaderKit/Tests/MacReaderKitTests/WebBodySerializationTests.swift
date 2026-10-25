@@ -24,6 +24,14 @@ struct WebBodySerializationTests {
         #expect(link.attributes == ["href": "notes.html#n1", "class": "ref"])
     }
 
+    @Test func keepsFontSizesAndTheMarkersTheBookLayerAdds() async throws {
+        let html = #"<p data-mr-heading="1" align="center"><font size="7">Chapter</font></p><hr data-mr-pagebreak="1">"#
+        let document = try await WebPageExtractor.serializeBody(html: html, baseURL: base)
+        #expect(document.body.first { $0.tag == "p" }?.attributes["data-mr-heading"] == "1")
+        #expect(document.body.first { $0.tag == "font" }?.attributes["size"] == "7")
+        #expect(document.body.first { $0.tag == "hr" }?.attributes["data-mr-pagebreak"] == "1")
+    }
+
     @Test func reportsTitleLanguageAndDirection() async throws {
         let html = #"<html lang="fr" dir="rtl"><head><title> Le Titre </title></head><body><p>x</p></body></html>"#
         let document = try await WebPageExtractor.serializeBody(html: html, baseURL: base)

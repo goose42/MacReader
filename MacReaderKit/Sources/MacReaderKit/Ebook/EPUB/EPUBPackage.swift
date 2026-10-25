@@ -76,7 +76,7 @@ struct EPUBPackage: Sendable {
         let titles = metadata.children(named: "title")
         let main = titles.first { refinement($0, "title-type") == "main" }
             ?? titles.first { refinement($0, "title-type") == nil } ?? titles.first
-        title = main.flatMap { Self.clean($0.textContent) }
+        title = main.flatMap { EbookText.clean($0.textContent) }
 
         let creators = metadata.children(named: "creator")
         let writers = creators.filter {
@@ -84,26 +84,15 @@ struct EPUBPackage: Sendable {
             return role == nil || role == "aut"
         }
         var seen: Set<String> = []
-        authors = (writers.isEmpty ? creators : writers).compactMap { Self.clean($0.textContent) }.filter { seen.insert($0).inserted }
+        authors = (writers.isEmpty ? creators : writers).compactMap { EbookText.clean($0.textContent) }.filter { seen.insert($0).inserted }
 
-        publisher = metadata.child("publisher").flatMap { Self.clean($0.textContent) }
-        date = metadata.child("date").flatMap { Self.clean($0.textContent) }
-        language = metadata.child("language").flatMap { Self.clean($0.textContent) }
-        summary = metadata.child("description").flatMap { Self.clean(Self.removingMarkup(from: $0.textContent)) }
+        publisher = metadata.child("publisher").flatMap { EbookText.clean($0.textContent) }
+        date = metadata.child("date").flatMap { EbookText.clean($0.textContent) }
+        language = metadata.child("language").flatMap { EbookText.clean($0.textContent) }
+        summary = metadata.child("description").flatMap { EbookText.plain(fromMarkup: $0.textContent) }
         let identifiers = metadata.children(named: "identifier")
         identifier = (identifiers.first { $0.attributes["id"] == uniqueIdentifier } ?? identifiers.first)
-            .flatMap { Self.clean($0.textContent) }
+            .flatMap { EbookText.clean($0.textContent) }
     }
 
-    /// Runs of whitespace collapsed to one space; nil if nothing is left.
-    private static func clean(_ text: String) -> String? {
-        let cleaned = text.replacing(/\s+/, with: " ").trimmingCharacters(in: .whitespaces)
-        return cleaned.isEmpty ? nil : cleaned
-    }
-
-    /// Descriptions are often HTML written as text: paragraph tags become spaces, the rest vanish.
-    private static func removingMarkup(from text: String) -> String {
-        let spaced = text.replacing(/<\/?(?:p|br|div|li|h[1-6])\b[^>]*>/.ignoresCase(), with: " ")
-        return HTMLEntities.decode(spaced.replacing(/<[^>]+>/, with: ""))
-    }
 }

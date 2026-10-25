@@ -46,7 +46,8 @@ public enum EbookExtractor {
     public static func extract(from url: URL) async throws -> Result {
         switch format(of: url) {
         case .epub: try await EPUBExtractor.extract(from: url)
-        case .mobi, nil: throw Failure.unsupported
+        case .mobi: try await MOBIExtractor.extract(from: url)
+        case nil: throw Failure.unsupported
         }
     }
 }

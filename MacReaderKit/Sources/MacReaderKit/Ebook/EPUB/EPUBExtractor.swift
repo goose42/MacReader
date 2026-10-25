@@ -33,8 +33,7 @@ enum EPUBExtractor {
         guard !built.blocks.isEmpty else { throw EbookExtractor.Failure.noText }
 
         let language = package.language
-        let isRightToLeft = package.pageProgression == "rtl"
-            || language?.split(separator: "-").first.map { MetadataResolver.rightToLeftLanguages.contains($0.lowercased()) } == true
+        let isRightToLeft = package.pageProgression == "rtl" || EbookText.isRightToLeft(language: language)
         let metadata = ArticleMetadata(
             byline: package.authors.isEmpty ? nil : package.authors.joined(separator: ", "), siteName: package.publisher,
             publishedDate: EbookDate.parse(package.date), language: language, isRightToLeft: isRightToLeft,

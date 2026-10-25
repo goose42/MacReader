@@ -3,6 +3,7 @@
 const MR_ATTRIBUTES = new Set([
     "href", "src", "srcset", "alt", "title", "id", "class", "role", "colspan", "rowspan", "start", "type", "lang",
     "dir", "datetime", "width", "height", "aria-label", "epub:type", "itemprop", "data-fn", "data-src", "data-srcset",
+    "size",
 ]);
 
 function mrNode(node) {
