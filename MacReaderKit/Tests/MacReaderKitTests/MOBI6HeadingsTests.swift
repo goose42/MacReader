@@ -65,6 +65,38 @@ struct MOBI6HeadingsTests {
         #expect(promoted(el("p", ["data-mr-heading": "1"], HTMLNode.text(long))).tag == "h2")
     }
 
+    // MARK: Markers on containers
+
+    @Test func aMarkedContainerMakesItsFirstTextBlockTheHeading() {
+        let chapter = el("div", ["data-mr-heading": "1"],
+            el("p", [:], el("img", ["src": "mobi-image:5"])),
+            el("p", [:], font("4", el("b", [:], "1"))),
+            el("p", [:], "Once a guy stood all day."))
+        let promoted = promoted(chapter)
+
+        #expect(promoted.tag == "div")
+        #expect(promoted.attributes["data-mr-heading"] == nil)
+        #expect(promoted.children.map(\.tag) == ["p", "h2", "p"])
+        #expect(promoted.children[1].textContent == "1")
+    }
+
+    @Test func theMarkerIsFollowedIntoNestedContainers() {
+        let chapter = el("div", ["data-mr-heading": "1"], el("div", [:], el("div", [:], el("p", [:], "Deep title")), el("p", [:], "Body.")))
+        let inner = promoted(chapter).children[0]
+        #expect(inner.children[0].children[0].tag == "h2")
+        #expect(inner.children[1].tag == "p")
+    }
+
+    @Test func aMarkedBlockquoteIsAHeading() {
+        #expect(promoted(el("blockquote", ["data-mr-heading": "1"], font("4", el("b", [:], "ABOUT THE AUTHOR")))).tag == "h2")
+        #expect(promoted(el("blockquote", [:], "Indented text")).tag == "blockquote")
+    }
+
+    @Test func aMarkedContainerWithNoTextIsLeftAlone() {
+        let cover = el("div", ["data-mr-heading": "1"], el("p", [:], el("img", ["src": "mobi-image:2"])))
+        #expect(promoted(cover).children.map(\.tag) == ["p"])
+    }
+
     @Test func existingHeadingsAreLeftAlone() {
         #expect(promoted(el("h3", [:], font("7", "Real heading"))).tag == "h3")
     }

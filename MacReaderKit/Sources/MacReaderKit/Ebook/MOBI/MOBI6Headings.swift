@@ -10,11 +10,44 @@ enum MOBI6Headings {
     ]
 
     static func promote(_ node: HTMLNode) -> HTMLNode {
-        var node = node
-        node.children = node.children.map(promote)
-        guard node.tag == "p" || node.tag == "div", !node.children.contains(where: containsBlock) else { return node }
+        promoteBlocks(movingMarkersIntoContainers(node))
+    }
 
+    /// The contents page of a book often points at the `<div>` that wraps a chapter, not at the heading inside it. The
+    /// heading is the first block of that container with any text in it, so the mark moves there.
+    private static func movingMarkersIntoContainers(_ node: HTMLNode) -> HTMLNode {
+        var node = node
+        if node.attributes[MOBI6Markup.headingAttribute] != nil, node.children.contains(where: containsBlock) {
+            node.attributes[MOBI6Markup.headingAttribute] = nil
+            _ = markFirstTextBlock(in: &node.children)
+        }
+        node.children = node.children.map(movingMarkersIntoContainers)
+        return node
+    }
+
+    /// Marks the first block in `nodes`, looking inside containers, that holds text and no other blocks.
+    private static func markFirstTextBlock(in nodes: inout [HTMLNode]) -> Bool {
+        for index in nodes.indices where !nodes[index].isText {
+            if nodes[index].children.contains(where: containsBlock) {
+                if markFirstTextBlock(in: &nodes[index].children) { return true }
+            } else if blocks.contains(nodes[index].tag),
+                      !nodes[index].textContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                nodes[index].attributes[MOBI6Markup.headingAttribute] = "1"
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func promoteBlocks(_ node: HTMLNode) -> HTMLNode {
+        var node = node
+        node.children = node.children.map(promoteBlocks)
         let marked = node.attributes[MOBI6Markup.headingAttribute] != nil
+        // An indented quotation is not a heading however it is set, but the contents page can say one is.
+        guard node.tag == "p" || node.tag == "div" || (marked && node.tag == "blockquote"),
+              !node.children.contains(where: containsBlock)
+        else { return node }
+
         let level = level(of: node)
         guard marked || level != nil else { return node }
         return HTMLNode(tag: "h\(level ?? 2)", children: node.children)

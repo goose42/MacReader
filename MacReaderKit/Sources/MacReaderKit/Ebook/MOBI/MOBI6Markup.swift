@@ -18,6 +18,11 @@ enum MOBI6Markup {
 
         var html = String(data: Data(bytes), encoding: encoding) ?? String(decoding: bytes, as: UTF8.self)
         html = html.replacing(/<mbp:pagebreak\s*\/?>(?:\s*<\/mbp:pagebreak>)?/.ignoresCase(), with: "<hr data-mr-pagebreak=\"1\">")
+        // A slash on an element that isn't void means nothing in HTML, so the browser's parser would leave `<a/>` open
+        // and nest everything after it inside. Old Kindle books write empty anchors this way after most paragraphs.
+        html = html.replacing(
+            /<(a|b|i|u|em|strong|font|span|sup|sub|tt|big|small|center|div|p|blockquote|h[1-6])\b([^>]*?)\s*\/>/.ignoresCase()
+        ) { match in "<\(match.1)\(match.2)></\(match.1)>" }
         html = html.replacing(/<img\b([^>]*?)\brecindex\s*=\s*["']?(\d+)["']?/.ignoresCase()) { match in
             "<img\(match.1)src=\"\(imageScheme)\(Int(match.2) ?? 0)\""
         }

@@ -72,6 +72,11 @@ struct MOBIExtractorTests {
         #expect(result.images.keys.sorted() == ["book-1.png"])
     }
 
+    @Test func anEmptyAnchorWrittenSelfClosingDoesNotSwallowTheParagraphsAfterIt() async throws {
+        let markup = "<html><body><p>First paragraph.</p><a/><p>Second paragraph.</p><p>Third paragraph.</p></body></html>"
+        #expect(summary(try await extract(spec(markup)).document) == ["p: First paragraph.", "p: Second paragraph.", "p: Third paragraph."])
+    }
+
     @Test func aPictureThatIsNotAnImageIsSkipped() async throws {
         var spec = spec(#"<html><body><p>Before.</p><img recindex="00001"/><p>After.</p></body></html>"#)
         spec.images = [Data("not an image".utf8)]
@@ -107,6 +112,31 @@ struct MOBIExtractorTests {
         #expect(result.document.plainText.contains("Contents") == false)
         // The only heading level in use is closed up to the first.
         #expect(summary(result.document).contains("h1: The Road"))
+    }
+
+    @Test func aContentsPageThatPointsAtWrappingDivsStillFindsTheHeadings() async throws {
+        let template = """
+            <html><head><guide><reference type="toc" filepos=@TOC@ /></guide></head><body>\
+            <div><p align="center"><b>NOVELS BY SOMEONE</b></p><p>\(String(repeating: "front ", count: 60))</p><mbp:pagebreak/></div>\
+            <div><a/><p align="center"><font size="4"><b>1</b></font></p><p>Once a guy stood all day. \(String(repeating: "word ", count: 60))</p><mbp:pagebreak/></div>\
+            <div><a/><p align="center"><font size="4"><b>2</b></font></p><p>Then another day. \(String(repeating: "step ", count: 60))</p><mbp:pagebreak/></div>\
+            <div><p align="center"><font size="7"><b>Table of Contents</b></font></p>\
+            <p><a filepos=@ONE@>Chapter 1</a></p><p><a filepos=@TWO@>Chapter 2</a></p></div>\
+            </body></html>
+            """
+        var zeroed = template
+        for token in ["@TOC@", "@ONE@", "@TWO@"] { zeroed = zeroed.replacingOccurrences(of: token, with: "0000000000") }
+        func offset(of needle: String) -> Int {
+            zeroed.utf8.distance(from: zeroed.startIndex, to: zeroed.range(of: needle)!.lowerBound)
+        }
+        // Each link points at the `<div>` that wraps a chapter, not at the heading inside it.
+        var filled = zeroed
+        for value in [offset(of: "<div><p align=\"center\"><font size=\"7\">"), offset(of: "<div><a/><p align=\"center\"><font size=\"4\"><b>1"), offset(of: "<div><a/><p align=\"center\"><font size=\"4\"><b>2")] {
+            filled.replaceSubrange(filled.range(of: "0000000000")!, with: String(format: "%010d", value))
+        }
+        let document = try await extract(spec(filled)).document
+        #expect(document.tableOfContents.map(\.title) == ["1", "2"])
+        #expect(document.plainText.contains("Table of Contents") == false)
     }
 
     // MARK: Metadata

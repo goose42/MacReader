@@ -31,6 +31,17 @@ struct MOBI6MarkupTests {
         #expect(!html.contains("mobi-image:9"))
     }
 
+    @Test func elementsWrittenSelfClosingAreClosed() {
+        // HTML ignores the slash on an element that isn't void, so `<a/>` would swallow everything after it.
+        #expect(prepare("<p>a</p><a/><p>b</p>") == "<p>a</p><a></a><p>b</p>")
+        #expect(prepare(#"<a name="x" /><b/><font size="3"/>"#) == #"<a name="x"></a><b></b><font size="3"></font>"#)
+        #expect(prepare("<P>a</P><A/>") == "<P>a</P><A></A>")
+    }
+
+    @Test func voidElementsKeepTheirSlash() {
+        #expect(prepare("a<br/>b<hr/><img src=\"x\"/>") == "a<br/>b<hr/><img src=\"x\"/>")
+    }
+
     @Test func textInOtherEncodingsIsDecoded() {
         let bytes = Data("<p>Caf".utf8) + Data([0xE9]) + Data("</p>".utf8)
         #expect(MOBI6Markup.prepare(bytes, encoding: .windowsCP1252) == "<p>Café</p>")
