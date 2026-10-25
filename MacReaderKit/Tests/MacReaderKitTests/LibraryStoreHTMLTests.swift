@@ -92,7 +92,7 @@ struct LibraryStoreHTMLTests {
         try Data(stale.utf8).write(to: root.appendingPathComponent("Items/\(item.id.uuidString)/document.json"))
 
         #expect(throws: LibraryStore.Failure.needsRebuild) { try store.document(for: item) }
-        #expect(store.originalPageURL(for: item).lastPathComponent == "original.html")
+        #expect(store.originalURL(for: item).lastPathComponent == "original.html")
 
         try store.refresh(item, with: extracted(title: "Fresh"))
         #expect(try store.document(for: item).title == "Fresh")
