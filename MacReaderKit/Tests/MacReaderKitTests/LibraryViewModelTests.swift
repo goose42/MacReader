@@ -91,6 +91,13 @@ struct LibraryViewModelTests {
         #expect(model.webPageError == "Couldn't find an article on this page.")
     }
 
+    @Test func dismissingTheWebPageErrorClearsIt() async throws {
+        let model = try makeWebViewModel { _ in webResult() }
+        _ = await model.addWebPage("notaurl")
+        model.dismissWebPageError()
+        #expect(model.webPageError == nil)
+    }
+
     @Test func aNewAttemptClearsThePreviousError() async throws {
         let model = try makeWebViewModel { _ in webResult() }
         _ = await model.addWebPage("notaurl")

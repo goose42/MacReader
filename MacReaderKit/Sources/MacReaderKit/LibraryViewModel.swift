@@ -119,6 +119,11 @@ public final class LibraryViewModel {
         }
     }
 
+    /// Called when the address sheet opens, so an earlier attempt's error isn't shown again.
+    public func dismissWebPageError() {
+        webPageError = nil
+    }
+
     /// Called when the person closes the error alert, so it doesn't reappear on the next update.
     public func dismissError() {
         errorMessage = nil
