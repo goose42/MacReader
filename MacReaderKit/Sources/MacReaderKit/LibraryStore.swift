@@ -42,10 +42,16 @@ public struct LibraryStore: Sendable {
     /// Adds an already-extracted web page: the page as saved, its images, and the document read from it.
     @discardableResult
     public func ingest(htmlAt url: URL, extracted: HTMLTextExtractor.Result) throws -> LibraryItem {
+        try ingest(extracted, named: url.lastPathComponent)
+    }
+
+    /// Adds a web page, named for where it came from; see `WebAddress.fileName(for:)`.
+    @discardableResult
+    public func ingest(_ extracted: HTMLTextExtractor.Result, named sourceFileName: String) throws -> LibraryItem {
         let item = LibraryItem(
             id: UUID(),
             title: extracted.document.title,
-            sourceFileName: url.lastPathComponent,
+            sourceFileName: sourceFileName,
             dateAdded: Date(),
             pageCount: 0,
             sourceKind: .html,
