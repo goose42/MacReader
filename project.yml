@@ -13,6 +13,17 @@ targets:
     sources: [MacReader]
     dependencies:
       - package: MacReaderKit
+    # The system has no type for Kindle books, so the app declares one for the Add File… panel to filter by.
+    info:
+      path: MacReader/Info.plist
+      properties:
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.amazon.mobi-ebook
+            UTTypeDescription: Kindle Book
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [mobi, azw, azw3, prc]
+              public.mime-type: [application/x-mobipocket-ebook]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jayanth.MacReader

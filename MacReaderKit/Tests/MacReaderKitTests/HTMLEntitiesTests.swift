@@ -17,4 +17,9 @@ struct HTMLEntitiesTests {
     @Test func doesNotDecodeTwice() {
         #expect(HTMLEntities.decode("&amp;lt;") == "&lt;")
     }
+
+    @Test func decodesTheLatin1AndTypographicEntitiesXHTMLUses() {
+        #expect(HTMLEntities.decode("caf&eacute; &Aacute;&uuml;&yuml; 6&divide;3 &frac12; &euro; &thinsp;&ensp;&emsp;") == "café Áüÿ 6÷3 ½ € \u{2009}\u{2002}\u{2003}")
+        #expect(HTMLEntities.decode("&iexcl;&uml;&shy;&copy;&reg;&sup2;&times;&szlig;&thorn;") == "¡¨\u{AD}©®²×ßþ")
+    }
 }

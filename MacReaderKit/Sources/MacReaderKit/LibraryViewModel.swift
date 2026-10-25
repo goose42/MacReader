@@ -64,8 +64,8 @@ public final class LibraryViewModel {
         reload()
     }
 
-    /// Adds PDFs and saved web pages. Folders selected beside a page (its "…_files" folder) are only there to give
-    /// the app access to its images.
+    /// Adds PDFs, ebooks (EPUB and Kindle) and saved web pages. Folders selected beside a page (its "…_files" folder)
+    /// are only there to give the app access to its images, but a folder that is an unpacked EPUB is a book.
     public func addDocuments(_ urls: [URL]) async {
         guard let store else { return }
         let scopes = urls.map { ($0, $0.startAccessingSecurityScopedResource()) }
@@ -75,7 +75,7 @@ public final class LibraryViewModel {
 
         var messages: [String] = []
         var missingImages = 0
-        for url in urls where !Self.isFolder(url) {
+        for url in urls where !Self.isFolder(url) || EbookExtractor.format(of: url) != nil {
             do {
                 switch url.pathExtension.lowercased() {
                 case "pdf":
@@ -85,7 +85,13 @@ public final class LibraryViewModel {
                     missingImages += extracted.missingImageCount
                     try store.ingest(htmlAt: url, extracted: extracted)
                 default:
-                    messages.append("\(url.lastPathComponent): Only PDFs and saved web pages can be added.")
+                    // Books are told by what they hold, not what they are called: Kindle files alone use four extensions.
+                    guard EbookExtractor.format(of: url) != nil else {
+                        messages.append("\(url.lastPathComponent): Only PDFs, ebooks (EPUB and Kindle) and saved web pages can be added.")
+                        continue
+                    }
+                    let extracted = try await EbookExtractor.extract(from: url)
+                    try store.ingest(ebookAt: url, extracted: extracted)
                 }
             } catch {
                 messages.append("\(url.lastPathComponent): \(Self.describe(error))")
@@ -96,6 +102,14 @@ public final class LibraryViewModel {
         }
         errorMessage = messages.isEmpty ? nil : messages.joined(separator: "\n")
         reload()
+    }
+
+    private static let documentExtensions: Set<String> = ["pdf", "html", "htm", "epub", "mobi", "azw", "azw3", "prc"]
+
+    /// Whether `url` is something `addDocuments` takes: a PDF, a web page, an ebook, or a folder (which may hold a page's
+    /// images, or be an unpacked book).
+    public static func canAdd(_ url: URL) -> Bool {
+        documentExtensions.contains(url.pathExtension.lowercased()) || isFolder(url)
     }
 
     /// Fetches the page at a typed or pasted address and adds it to the library. Returns the new item, or nil with
@@ -146,15 +160,21 @@ public final class LibraryViewModel {
         }
     }
 
-    /// Reads a web page saved by an older format again from its saved copy.
+    /// Reads a web page or book saved by an older format again from its saved copy.
     private func rebuild(_ item: LibraryItem) {
         guard let store else { return }
         isWorking = true
         rebuilding = Task {
             defer { isWorking = false }
             do {
-                let extracted = try await HTMLTextExtractor.extract(pageAt: store.originalPageURL(for: item))
-                try store.refresh(item, with: extracted)
+                switch item.sourceKind {
+                case .html:
+                    try store.refresh(item, with: try await HTMLTextExtractor.extract(pageAt: store.originalURL(for: item)))
+                case .epub, .mobi:
+                    try store.refresh(item, with: try await EbookExtractor.extract(from: store.originalURL(for: item)))
+                case .pdf:
+                    return
+                }
                 guard !Task.isCancelled, selectedItemID == item.id else { return }
                 selectedDocument = try store.document(for: item)
                 selectedPosition = store.readingPosition(for: item)
@@ -189,7 +209,7 @@ public final class LibraryViewModel {
     /// The saved copy of the selected web page, which opens in a browser to show the page as it was.
     public var selectedPageURL: URL? {
         guard let store, let item = selectedItem, item.sourceKind == .html else { return nil }
-        return store.originalPageURL(for: item)
+        return store.originalURL(for: item)
     }
 
     /// Where a figure of the selected document is saved, or nil when nothing is selected.
@@ -242,6 +262,14 @@ public final class LibraryViewModel {
             case .unreadable: return "Couldn't read this page."
             case .noArticle: return "Couldn't find an article on this page."
             case .webViewFailed(let detail): return "Couldn't read this page (\(detail))."
+            }
+        }
+        if let failure = error as? EbookExtractor.Failure {
+            switch failure {
+            case .unreadable: return "Couldn't read this book."
+            case .drmProtected: return "This book is protected by DRM and can't be opened."
+            case .unsupported: return "Only PDFs, ebooks (EPUB and Kindle) and saved web pages can be added."
+            case .noText: return "No text found in this book."
             }
         }
         if let failure = error as? WebPageFetcher.Failure {

@@ -1,9 +1,10 @@
 import Foundation
 
-/// Reads and writes the on-disk library: `Items/<uuid>/{original.pdf | original.html, content.txt, document.json, …}`.
+/// Reads and writes the on-disk library:
+/// `Items/<uuid>/{original.pdf | original.html | original.epub | original.mobi, content.txt, document.json, …}`.
 public struct LibraryStore: Sendable {
     public enum Failure: Error, Equatable {
-        /// A web page saved by an older extraction format; extract it again from `originalPageURL(for:)`.
+        /// A web page or book saved by an older extraction format; extract it again from `originalURL(for:)`.
         case needsRebuild
     }
 
@@ -67,6 +68,27 @@ public struct LibraryStore: Sendable {
         return item
     }
 
+    /// Adds an already-extracted book: a copy of the file (or of the folder, for an unpacked EPUB), its pictures, and the
+    /// document read from it.
+    @discardableResult
+    public func ingest(ebookAt url: URL, extracted: EbookExtractor.Result) throws -> LibraryItem {
+        let kind: LibraryItem.SourceKind = extracted.format == .epub ? .epub : .mobi
+        let item = LibraryItem(
+            id: UUID(),
+            title: extracted.document.title,
+            sourceFileName: url.lastPathComponent,
+            dateAdded: Date(),
+            pageCount: 0,
+            sourceKind: kind,
+            author: extracted.document.metadata?.byline)
+
+        try commit(item) { staging in
+            try FileManager.default.copyItem(at: url, to: staging.appendingPathComponent(Self.originalName(for: kind)))
+            try write(extracted.document, images: extracted.images, into: staging)
+        }
+        return item
+    }
+
     /// Builds the item in a staging folder, then moves it into place so failures leave nothing behind.
     private func commit(_ item: LibraryItem, build: (URL) throws -> Void) throws {
         let fileManager = FileManager.default
@@ -123,20 +145,35 @@ public struct LibraryStore: Sendable {
            document.formatVersion >= ReaderDocument.currentFormatVersion {
             return document
         }
-        if item.sourceKind == .html { throw Failure.needsRebuild }
+        if item.sourceKind != .pdf { throw Failure.needsRebuild }
         let pdf = try Data(contentsOf: folder.appendingPathComponent("original.pdf"))
         let extracted = try PDFTextExtractor.extract(from: pdf, fallbackTitle: item.title)
         try write(extracted.document, images: extracted.images, into: folder)
         return extracted.document
     }
 
-    /// The saved copy of a web page, beside its saved images, so it can be read again.
-    public func originalPageURL(for item: LibraryItem) -> URL {
-        folder(for: item.id).appendingPathComponent("original.html")
+    /// The saved copy of the file the item was made from (for a web page, beside its saved images), so it can be read
+    /// again.
+    public func originalURL(for item: LibraryItem) -> URL {
+        folder(for: item.id).appendingPathComponent(Self.originalName(for: item.sourceKind))
+    }
+
+    private static func originalName(for kind: LibraryItem.SourceKind) -> String {
+        switch kind {
+        case .pdf: "original.pdf"
+        case .html: "original.html"
+        case .epub: "original.epub"
+        case .mobi: "original.mobi"
+        }
     }
 
     /// Replaces a web page's document with a fresh extraction of it.
     public func refresh(_ item: LibraryItem, with extracted: HTMLTextExtractor.Result) throws {
+        try write(extracted.document, images: extracted.images, into: folder(for: item.id))
+    }
+
+    /// Replaces a book's document with a fresh extraction of it.
+    public func refresh(_ item: LibraryItem, with extracted: EbookExtractor.Result) throws {
         try write(extracted.document, images: extracted.images, into: folder(for: item.id))
     }
 
