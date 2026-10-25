@@ -112,7 +112,7 @@ public struct ReaderDocument: Codable, Equatable, Sendable {
     }
 
     /// Bumped when extraction changes what `document.json` holds, so older items are rebuilt from their PDF.
-    public static let currentFormatVersion = 6
+    public static let currentFormatVersion = 7
 
     public var formatVersion: Int
     public var title: String

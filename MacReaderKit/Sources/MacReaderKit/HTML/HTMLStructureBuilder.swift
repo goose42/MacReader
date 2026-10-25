@@ -12,11 +12,16 @@ struct HTMLStructureBuilder {
     }
 
     /// `loadImage` is handed an image's address exactly as the page wrote it and returns its bytes, or nil when it
-    /// can't be had offline.
-    static func build(from root: HTMLNode, title: String, loadImage: @escaping (String) -> Data?) -> Result {
-        let walker = Walker(loadImage: loadImage)
+    /// can't be had offline. Images are named `<imagePrefix>-<n>.<ext>`. A book keeps a heading that repeats its
+    /// title (`dropsRepeatedTitle: false`), because there it is part of the text rather than page chrome.
+    static func build(
+        from root: HTMLNode, title: String, imagePrefix: String = "web", dropsRepeatedTitle: Bool = true,
+        loadImage: @escaping (String) -> Data?
+    ) -> Result {
+        let walker = Walker(imagePrefix: imagePrefix, loadImage: loadImage)
         walker.walkChildren(of: root)
-        var blocks = dropRepeatedTitle(walker.blocks, title: title)
+        walker.finish()
+        var blocks = dropsRepeatedTitle ? dropRepeatedTitle(walker.blocks, title: title) : walker.blocks
         blocks = closeUpHeadingLevels(blocks)
         return Result(blocks: HeadingNumbering.apply(to: blocks), images: walker.images)
     }
@@ -51,10 +56,29 @@ private final class Walker {
     private(set) var blocks: [ReaderDocument.Block] = []
     private(set) var images: [String: Data] = [:]
     private var imageCount = 0
+    private let imagePrefix: String
     private let loadImage: (String) -> Data?
 
-    init(loadImage: @escaping (String) -> Data?) {
+    /// Notes a book sets inline (`epub:type="footnote"`) wait here to be placed at the end of their chapter.
+    private var pendingNotes: [(marker: String, text: String)] = []
+    private var noteCount = 0
+    /// Levels of the headings that open chapters, and the ids of the titles added to chapters that had none.
+    private var openingLevels: [Int] = []
+    private var addedTitles: [Int] = []
+
+    init(imagePrefix: String, loadImage: @escaping (String) -> Data?) {
+        self.imagePrefix = imagePrefix
         self.loadImage = loadImage
+    }
+
+    /// Places any notes still waiting, and gives the titles added to chapters the level the book's own chapter
+    /// headings use, so they sit together in the table of contents.
+    func finish() {
+        flushNotes()
+        let level = openingLevels.min() ?? 1
+        for index in addedTitles {
+            blocks[index] = .init(id: index, kind: .heading(level: level), text: blocks[index].text)
+        }
     }
 
     // MARK: Vocabulary
@@ -83,6 +107,8 @@ private final class Walker {
     private static let permalinkGlyphs: Set<String> = ["#", "¶", "§", "🔗"]
     private static let bullets = ["•", "◦", "▪"]
     private static let smallestImageSide = 32
+    private static let epubNoteTypes: Set<String> = ["footnote", "endnote", "rearnote", "note"]
+    private static let epubNoteContainerTypes: Set<String> = ["footnotes", "endnotes", "rearnotes"]
 
     // MARK: Walking
 
@@ -110,8 +136,10 @@ private final class Walker {
 
     private func walkBlock(_ node: HTMLNode) {
         let tag = node.tag
-        if Self.skipped.contains(tag) { return }
+        if Self.skipped.contains(tag) || isPageBreak(node) { return }
+        if let title = node.attributes["data-mr-chapter"] { return emitChapter(node, title: title) }
         if isNoteContainer(node) { return emitNotes(in: node) }
+        if isEPUBNote(node) { return deferNote(node) }
         if isCallout(node) { return emitCallout(node) }
         switch tag {
         case "h1", "h2", "h3", "h4", "h5", "h6":
@@ -168,7 +196,7 @@ private final class Walker {
             default: break
             }
             if Self.skipped.contains(node.tag) || isNoteReference(node) || isBacklink(node) || isPermalink(node)
-                || classes(of: node).contains("katex-html") { continue }
+                || isPageBreak(node) || classes(of: node).contains("katex-html") { continue }
             let isBlock = Self.blockTags.contains(node.tag)
             if isBlock { out += " " }
             collectInline(node.children, into: &out)
@@ -235,9 +263,25 @@ private final class Walker {
             || !classes(of: node).isDisjoint(with: Self.calloutClasses)
     }
 
+    private func epubTypes(of node: HTMLNode) -> Set<String> {
+        Set((node.attributes["epub:type"] ?? "").lowercased().split(whereSeparator: \.isWhitespace).map(String.init))
+    }
+
+    /// A page number a print edition marks in the margin of its text.
+    private func isPageBreak(_ node: HTMLNode) -> Bool {
+        node.attributes["role"] == "doc-pagebreak" || epubTypes(of: node).contains("pagebreak")
+    }
+
+    /// A single note a book marks as one, wherever it sits.
+    private func isEPUBNote(_ node: HTMLNode) -> Bool {
+        if let role = node.attributes["role"], role == "doc-footnote" || role == "doc-endnote" { return true }
+        return !epubTypes(of: node).isDisjoint(with: Self.epubNoteTypes)
+    }
+
     private func isNoteContainer(_ node: HTMLNode) -> Bool {
         if let role = node.attributes["role"], role == "doc-endnotes" || role == "doc-footnotes" { return true }
         guard ["ol", "ul", "div", "section", "aside"].contains(node.tag) else { return false }
+        if !epubTypes(of: node).isDisjoint(with: Self.epubNoteContainerTypes) { return true }
         let tokens = classes(of: node)
         return !tokens.isDisjoint(with: Self.noteContainerClasses) || (node.tag == "div" && tokens.contains("footnote"))
     }
@@ -288,7 +332,7 @@ private final class Walker {
         var items: [HTMLNode] = []
         func find(in node: HTMLNode) {
             for child in node.children {
-                if child.tag == "li" || child.attributes["role"] == "doc-footnote" || (child.tag == "div" && classes(of: child).contains("footnote")) {
+                if child.tag == "li" || isEPUBNote(child) || (child.tag == "div" && classes(of: child).contains("footnote")) {
                     items.append(child)
                 } else {
                     find(in: child)
@@ -300,9 +344,83 @@ private final class Walker {
         for (index, item) in items.enumerated() {
             let number = firstDescendant(of: item) { classes(of: $0).contains("footnote-number") }
             let marker = number.map { flatText([$0]).trimmingCharacters(in: CharacterSet(charactersIn: ".[]() ")) } ?? "\(index + 1)"
+            if number == nil, isEPUBNote(item) {
+                let note = epubNote(item, ordinal: index + 1)
+                if !note.text.isEmpty { emit(.footnote(marker: note.marker), note.text) }
+                continue
+            }
             let source = firstDescendant(of: item) { classes(of: $0).contains("footnote-content") } ?? item
             let text = flatText(source.children)
             if !text.isEmpty { emit(.footnote(marker: marker.isEmpty ? "\(index + 1)" : marker), text) }
+        }
+    }
+
+    /// A note's marker and text. The marker is a leading number or symbol, whether written as a link, a superscript or
+    /// plain text ("2.", "[3]"); a note without one is numbered by its place among the chapter's notes.
+    private func epubNote(_ node: HTMLNode, ordinal: Int) -> (marker: String, text: String) {
+        var text = flatText(node.children)
+        if let lead = leadingInline(of: node) {
+            let token = flatText([lead])
+            if token.wholeMatch(of: /[\[(]?(\d{1,4}|[*†‡§]{1,3})[\])]?\.?/) != nil, text.hasPrefix(token) {
+                let rest = String(text.dropFirst(token.count)).replacing(/^[\])]?[.:]?\s*/, with: "")
+                return (token.trimmingCharacters(in: CharacterSet(charactersIn: "[]() .:")), rest)
+            }
+        }
+        if let match = text.prefixMatch(of: /(?:[\[(](\d{1,4}|[*†‡§]{1,3})[\])]|(\d{1,4})[.:)])\s+/) {
+            let marker = String(match.1 ?? match.2 ?? "")
+            text = String(text[match.range.upperBound...])
+            return (marker, text)
+        }
+        return ("\(ordinal)", text)
+    }
+
+    /// The first inline element a note opens with, looking through the paragraph that wraps it; nil if it opens with text.
+    private func leadingInline(of node: HTMLNode) -> HTMLNode? {
+        for child in node.children {
+            if child.isText {
+                if child.text.allSatisfy(\.isWhitespace) { continue }
+                return nil
+            }
+            if ["p", "div", "li", "section", "aside"].contains(child.tag) { return leadingInline(of: child) }
+            return child
+        }
+        return nil
+    }
+
+    private func deferNote(_ node: HTMLNode) {
+        noteCount += 1
+        let note = epubNote(node, ordinal: noteCount)
+        if !note.text.isEmpty { pendingNotes.append(note) }
+    }
+
+    private func flushNotes() {
+        for note in pendingNotes { emit(.footnote(marker: note.marker), note.text) }
+        pendingNotes = []
+        noteCount = 0
+    }
+
+    // MARK: Chapters
+
+    /// One spine item of a book. Its notes end it, and one that doesn't open with a heading is given its title from
+    /// the book's table of contents, so every chapter appears there.
+    private func emitChapter(_ node: HTMLNode, title: String) {
+        let start = blocks.count
+        walkChildren(of: node)
+        flushNotes()
+        guard blocks.count > start else { return }
+
+        let opening = blocks[start...].first { if case .image = $0.kind { false } else { true } }
+        if case .heading(let level)? = opening?.kind {
+            openingLevels.append(level)
+            return
+        }
+        guard !title.isEmpty else { return }
+        let chapter = Array(blocks[start...])
+        blocks.removeSubrange(start...)
+        emit(.heading(level: 1), title)
+        addedTitles.append(start)
+        for block in chapter {
+            blocks.append(.init(id: blocks.count, kind: block.kind, text: block.text, numbering: block.numbering))
         }
     }
 
@@ -407,7 +525,7 @@ private final class Walker {
             else { continue }
             let type = CGImageSourceGetType(source).flatMap { UTType($0 as String) }
             imageCount += 1
-            let name = "web-\(imageCount).\(type?.preferredFilenameExtension ?? "img")"
+            let name = "\(imagePrefix)-\(imageCount).\(type?.preferredFilenameExtension ?? "img")"
             images[name] = data
             blocks.append(.init(id: blocks.count, kind: .image(name: name, aspectRatio: Double(width) / Double(height)), text: ""))
             return
