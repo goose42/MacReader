@@ -8,6 +8,12 @@ const MR_ATTRIBUTES = new Set([
 function mrNode(node) {
     if (node.nodeType === 3) return { tag: "#text", text: node.nodeValue };
     if (node.nodeType !== 1) return null;
+    // A cover drawn as an SVG wrapping one picture is reported as that picture.
+    if (node.tagName.toLowerCase() === "svg") {
+        const picture = node.querySelector("image");
+        const address = picture && (picture.getAttribute("href") || picture.getAttribute("xlink:href"));
+        if (address) return { tag: "img", attrs: { src: address }, children: [] };
+    }
     const attrs = {};
     for (const attribute of node.attributes) {
         if (MR_ATTRIBUTES.has(attribute.name) || attribute.name.startsWith("data-mr-")) attrs[attribute.name] = attribute.value;
@@ -36,6 +42,16 @@ function mrMetadata(doc) {
         direction: doc.documentElement.getAttribute("dir"),
         baseURL: doc.baseURI,
     };
+}
+
+// The page's body and the few facts about it a book chapter has, with no article-picking at all.
+function mrBody() {
+    return JSON.stringify({
+        body: mrNode(document.body),
+        title: (document.title || "").trim(),
+        language: document.documentElement.getAttribute("lang"),
+        direction: document.documentElement.getAttribute("dir"),
+    });
 }
 
 function mrExtract() {
