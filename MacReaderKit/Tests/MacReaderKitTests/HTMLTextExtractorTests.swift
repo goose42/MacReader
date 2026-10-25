@@ -81,6 +81,32 @@ struct HTMLTextExtractorTests {
         #expect(result.resourcesFolder?.lastPathComponent == "Saved Page_files")
     }
 
+    @Test func webImagesResolveThroughTheManifestBesideThePage() async throws {
+        let directory = try folder()
+        let files = directory.appendingPathComponent("Saved Page_files", isDirectory: true)
+        try FileManager.default.createDirectory(at: files, withIntermediateDirectories: true)
+        try png(width: 300, height: 150).write(to: files.appendingPathComponent("0.png"))
+        try JSONEncoder().encode(["https://example.com/img/photo.png": "0.png"]).write(to: files.appendingPathComponent("images.json"))
+        let url = try write("""
+            <html><head><title>Pictures</title></head><body><article>
+            <p>\(Self.filler)</p>
+            <figure><img src="https://example.com/img/photo.png" alt="A photo"><figcaption>The photo.</figcaption></figure>
+            <p>\(Self.filler)</p></article></body></html>
+            """, in: directory)
+        let result = try await HTMLTextExtractor.extract(pageAt: url)
+        #expect(result.images.count == 1)
+        #expect(result.missingImageCount == 0)
+    }
+
+    @Test func webImagesWithoutAManifestAreLeftOut() async throws {
+        let url = try write("""
+            <html><head><title>Pictures</title></head><body><article>
+            <p>\(Self.filler)</p><img src="https://example.com/img/photo.png"><p>\(Self.filler)</p></article></body></html>
+            """, in: try folder())
+        let result = try await HTMLTextExtractor.extract(pageAt: url)
+        #expect(result.images.isEmpty)
+    }
+
     @Test func inlineDataImagesAreDecoded() async throws {
         let uri = "data:image/png;base64," + png(width: 100, height: 100).base64EncodedString()
         let url = try write("""

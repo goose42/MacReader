@@ -46,7 +46,9 @@ public enum HTMLTextExtractor {
         let title = resolved.title ?? url.deletingPathExtension().lastPathComponent
         let missing = MissingImages()
         let content = BoilerplateFilter.filter(choice.content, byline: resolved.byline, publishedDate: resolved.publishedDate)
-        let built = HTMLStructureBuilder.build(from: content, title: title) { loadImage($0, missing: missing) }
+        let resourcesFolder = HTMLSource.resourcesFolder(for: url)
+        let downloads = resourcesFolder.map(downloadedImages(in:)) ?? [:]
+        let built = HTMLStructureBuilder.build(from: content, title: title) { loadImage($0, downloads: downloads, missing: missing) }
         guard !built.blocks.isEmpty else { throw Failure.noArticle }
 
         return Result(
@@ -55,7 +57,7 @@ public enum HTMLTextExtractor {
                 sourceURL: resolved.sourceURL, language: resolved.language, isRightToLeft: resolved.isRightToLeft,
                 excerpt: resolved.excerpt)),
             originalHTML: data,
-            resourcesFolder: HTMLSource.resourcesFolder(for: url),
+            resourcesFolder: resourcesFolder,
             images: built.images,
             missingImageCount: missing.addresses.count)
     }
@@ -64,9 +66,22 @@ public enum HTMLTextExtractor {
         var addresses: Set<String> = []
     }
 
-    /// An image's bytes from an inline `data:` address or a file next to the page; pictures that live only on the
-    /// web are left out, since reading never touches the network.
-    private static func loadImage(_ address: String, missing: MissingImages) -> Data? {
+    /// Name of the file in a page's resources folder that maps the web addresses of pictures downloaded when the
+    /// page was fetched to the files holding them.
+    static let imageManifestName = "images.json"
+
+    /// Web address to image bytes, read from the manifest in `folder`; empty when the page wasn't fetched from the web.
+    private static func downloadedImages(in folder: URL) -> [String: Data] {
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent(imageManifestName)),
+              let manifest = try? JSONDecoder().decode([String: String].self, from: data)
+        else { return [:] }
+        return manifest.compactMapValues { try? Data(contentsOf: folder.appendingPathComponent($0)) }
+    }
+
+    /// An image's bytes from an inline `data:` address, a file next to the page, or a picture downloaded when the
+    /// page was fetched; pictures that live only on the web are left out, since reading never touches the network.
+    private static func loadImage(_ address: String, downloads: [String: Data], missing: MissingImages) -> Data? {
+        if let downloaded = downloads[address] { return downloaded }
         if address.hasPrefix("data:") {
             guard let comma = address.firstIndex(of: ",") else { return nil }
             let header = address[..<comma]
