@@ -14,7 +14,7 @@ enum MetadataResolver {
         var excerpt: String?
     }
 
-    private static let rightToLeftLanguages: Set<String> = ["ar", "he", "fa", "ur", "yi", "ps", "sd", "ug", "dv", "ckb"]
+    static let rightToLeftLanguages: Set<String> = ["ar", "he", "fa", "ur", "yi", "ps", "sd", "ug", "dv", "ckb"]
     private static let otherArticleTypes: Set<String> = ["BlogPosting", "LiveBlogPosting", "SocialMediaPosting", "Report", "DiscussionForumPosting", "APIReference"]
 
     static func resolve(_ raw: RawMetadata, readability: ReadabilityResult?, savedFromURL: URL?, now: Date = Date()) -> Resolved {
