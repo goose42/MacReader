@@ -34,4 +34,23 @@ struct RealBookTests {
         let falling = try #require(document.blocks.first { $0.text.contains("Down, down, down.") })
         #expect(falling.sentences.count > 1)
     }
+
+    @Test func theKindleBookReadsAsABook() async throws {
+        let result = try await EbookExtractor.extract(from: fixture("alice-mobi6.mobi"))
+        let document = result.document
+
+        #expect(result.format == .mobi)
+        #expect(document.title == "Alice's Adventures in Wonderland")
+        #expect(document.metadata?.byline == "Lewis Carroll")
+        #expect(document.metadata?.language == "en")
+        #expect(document.metadata?.publishedDate != nil)
+
+        // The chapter headings are paragraphs set in a large font; each is a heading, once.
+        #expect(document.tableOfContents.map(\.title).filter { $0.hasPrefix("CHAPTER") } == Self.chapterTitles)
+        #expect(document.plainText.contains("Alice was beginning to get very tired of sitting by her sister"))
+
+        // The contents page the file ends with is gone, and the book's text still ends with its licence.
+        #expect(!document.blocks.contains { $0.text == "Table of Contents" })
+        #expect(document.blocks.last?.text.contains("Project Gutenberg") == true)
+    }
 }
