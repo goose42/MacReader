@@ -31,7 +31,7 @@ A native macOS app (Swift + SwiftUI) that makes reading easier. Users pick a lib
 
 ### Reader settings
 
-Arrow keys always step sentences once a document is open, even right after clicking the sidebar; ⌥⌘↑/⌥⌘↓ (Go menu) move between documents (`LibraryViewModel.adjacentItem`). **Fixed Highlighting** (on by default) scrolls so the current sentence sits `fixedHighlightLines` lines (1–10) below the top, except near the start and end of the page; `FixedHighlightScroll` does the arithmetic and `ReaderView` measures the sentence through `SentenceHitMap`. With it off the reader keeps the older anchor-based scrolling. Text, background, highlight and dimmed-text colors each have a light and a dark value (`AppearanceColor`, stored as `light|dark`; a single legacy value applies to both).
+Arrow keys always step sentences once a document is open, even right after clicking the sidebar; ⌥⌘↑/⌥⌘↓ (Go menu) move between documents (`LibraryViewModel.adjacentItem`). **Fixed Highlighting** (on by default) scrolls so the current sentence sits `fixedHighlightLines` lines (1–10) below the top, except near the start and end of the page; `FixedHighlightScroll` does the arithmetic and `ReaderView` measures the sentence through `SentenceHitMap`. With it off the reader keeps the older anchor-based scrolling. The toolbar shows a reading-progress ring (`ReadingProgressRing`) fed by `SentenceNavigator.progress`, weighted by sentence length: 0 on the first sentence, 1 on the last. Text, background, highlight and dimmed-text colors each have a light and a dark value (`AppearanceColor`, stored as `light|dark`; a single legacy value applies to both).
 
 ### Web pages (HTML)
 

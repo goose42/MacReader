@@ -110,6 +110,7 @@ struct ReaderView: View {
             .navigationTitle(document.title)
             .toolbar {
                 ToolbarItemGroup {
+                    ReadingProgressRing(progress: navigator.progress)
                     if let originalPageURL {
                         Button("Open Original", systemImage: "safari") { NSWorkspace.shared.open(originalPageURL) }
                             .keyboardShortcut("o", modifiers: [.command, .option])
