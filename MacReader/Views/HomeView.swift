@@ -62,16 +62,22 @@ struct HomeView: View {
     private var splitView: some View {
         NavigationSplitView {
             List(library.items, selection: $selection) { item in
-                Label {
-                    VStack(alignment: .leading) {
-                        Text(item.title).lineLimit(2)
-                        Text(subtitle(of: item))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                HStack {
+                    Label {
+                        VStack(alignment: .leading) {
+                            Text(item.title).lineLimit(2)
+                            Text(subtitle(of: item))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    } icon: {
+                        Image(systemName: item.sourceKind == .html ? "globe" : "doc.text")
                     }
-                } icon: {
-                    Image(systemName: item.sourceKind == .html ? "globe" : "doc.text")
+                    if let progress = library.progress(of: item) {
+                        Spacer()
+                        ReadingProgressRing(progress: progress)
+                    }
                 }
                 .accessibilityElement(children: .combine)
                 .contextMenu {

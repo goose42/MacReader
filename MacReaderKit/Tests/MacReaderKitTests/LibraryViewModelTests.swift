@@ -245,6 +245,29 @@ struct LibraryViewModelTests {
         #expect(second.selectedPosition == .init(blockID: 0, sentence: 1))
     }
 
+    @Test func progressIsOnlyReportedForTheSelectedItem() throws {
+        let model = LibraryViewModel(location: LibraryLocation(defaults: UserDefaults(suiteName: "LibraryViewModelTests-\(UUID().uuidString)")!))
+        model.chooseLibrary(try makeFolder())
+        model.addPDFs([try writePDF("a.pdf", pages: ["One. Two. Three."])])
+        let item = model.items[0]
+        model.select(item)
+        model.saveReadingPosition(.init(blockID: 0, sentence: 2))
+
+        #expect(model.progress(of: item) == 1)
+        #expect(model.progress(of: LibraryItem(id: UUID(), title: "Other", sourceFileName: "o.pdf", dateAdded: .now, pageCount: 1)) == nil)
+    }
+
+    @Test func progressFollowsTheSavedPosition() throws {
+        let model = LibraryViewModel(location: LibraryLocation(defaults: UserDefaults(suiteName: "LibraryViewModelTests-\(UUID().uuidString)")!))
+        model.chooseLibrary(try makeFolder())
+        model.addPDFs([try writePDF("a.pdf", pages: ["One. Two. Three."])])
+        model.select(model.items[0])
+        #expect(model.progress(of: model.items[0]) == 0)
+        model.saveReadingPosition(.init(blockID: 0, sentence: 1))
+        let progress = try #require(model.progress(of: model.items[0]))
+        #expect(progress > 0 && progress < 1)
+    }
+
     // MARK: - Web pages
 
     private static let filler = String(repeating: "The quick brown fox jumps over the lazy dog, again and again. ", count: 10)

@@ -172,6 +172,12 @@ public final class LibraryViewModel {
         try? store.saveReadingPosition(position, for: item)
     }
 
+    /// How much of `item` has been read, from 0 to 1, or nil unless it is the open document.
+    public func progress(of item: LibraryItem) -> Double? {
+        guard item.id == selectedItemID, let selectedDocument else { return nil }
+        return SentenceNavigator(document: selectedDocument, startingAt: selectedPosition).progress
+    }
+
     public var selectedItem: LibraryItem? { items.first { $0.id == selectedItemID } }
 
     /// The item `offset` places from the selected one (-1 is the one above it), or nil at either end of the library.

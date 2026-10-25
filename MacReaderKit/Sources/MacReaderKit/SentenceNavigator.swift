@@ -18,6 +18,8 @@ public struct SentenceNavigator: Equatable, Sendable {
         let position: Position
         let range: Range<Int>
         let blockLength: Int
+        /// Where the sentence starts in the document's reading text: the combined length of the sentences before it.
+        let offset: Int
     }
 
     private let stops: [Stop]
@@ -25,12 +27,15 @@ public struct SentenceNavigator: Equatable, Sendable {
 
     /// Starts on `start` if it is a reading stop, otherwise on the first stop (a saved position can go stale).
     public init(document: ReaderDocument, startingAt start: Position? = nil) {
+        var offset = 0
         stops = document.blocks.flatMap { block in
             block.sentences.enumerated().map { sentence, range in
-                Stop(
+                defer { offset += range.count }
+                return Stop(
                     position: Position(blockID: block.id, sentence: sentence),
                     range: range,
-                    blockLength: block.text.utf16.count)
+                    blockLength: block.text.utf16.count,
+                    offset: offset)
             }
         }
         index = stops.firstIndex { $0.position == start } ?? 0
@@ -45,6 +50,12 @@ public struct SentenceNavigator: Equatable, Sendable {
     public var scrollAnchor: Double {
         guard let stop, stop.blockLength > 0 else { return 0 }
         return Double(stop.range.lowerBound + stop.range.upperBound) / 2 / Double(stop.blockLength)
+    }
+
+    /// How far through the document the cursor is, from 0 (first sentence) to 1 (last), weighted by sentence length.
+    public var progress: Double {
+        guard let stop, let last = stops.last else { return 0 }
+        return last.offset == 0 ? 1 : Double(stop.offset) / Double(last.offset)
     }
 
     @discardableResult
