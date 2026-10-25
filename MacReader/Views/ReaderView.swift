@@ -134,7 +134,7 @@ struct ReaderView: View {
         }
     }
 
-    /// The title, and for a web article the site it came from with its byline, date and reading time.
+    /// The title, and for a web article or book the site or publisher it came from with its byline, date and reading time.
     private var header: some View {
         VStack(alignment: .leading, spacing: fontSize * 0.3) {
             if let siteName = document.metadata?.siteName {
