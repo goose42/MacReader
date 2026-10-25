@@ -6,6 +6,8 @@ struct HomeView: View {
     let library: LibraryViewModel
     @Binding var isChoosingLibrary: Bool
     @Binding var isImporting: Bool
+    @Binding var isAddingWebPage: Bool
+    @State private var droppedAddress = ""
     @State private var selection: MacReaderKit.LibraryItem.ID?
     @State private var pendingDeletion: MacReaderKit.LibraryItem?
     @FocusState private var isSidebarFocused: Bool
@@ -26,6 +28,9 @@ struct HomeView: View {
         // sandboxed app read its images.
         .fileImporter(isPresented: $isImporting, allowedContentTypes: [.pdf, .html, .folder], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { Task { await library.addDocuments(urls) } }
+        }
+        .sheet(isPresented: $isAddingWebPage) {
+            AddURLSheet(library: library, initialAddress: droppedAddress) { selection = $0.id }
         }
         .overlay {
             if library.isWorking {
@@ -84,16 +89,20 @@ struct HomeView: View {
                     ContentUnavailableView {
                         Label("No Documents", systemImage: "books.vertical")
                     } description: {
-                        Text("Add a PDF or a saved web page to start reading.")
+                        Text("Add a PDF, a saved web page, or the address of an article to start reading.")
                     } actions: {
-                        Button("Import…") { isImporting = true }
+                        Button("Add File…", systemImage: "doc") { isImporting = true }
+                        Button("Add Web Page from URL…", systemImage: "link") { addWebPage() }
                     }
                 }
             }
             .toolbar {
                 ToolbarItem {
-                    Button("Import", systemImage: "plus") { isImporting = true }
-                        .help("Add a PDF or a saved web page to the library")
+                    Menu("Add", systemImage: "plus") {
+                        Button("Add File…", systemImage: "doc") { isImporting = true }
+                        Button("Add Web Page from URL…", systemImage: "link") { addWebPage() }
+                    }
+                    .help("Add a file or a web page to the library")
                 }
             }
         } detail: {
@@ -114,11 +123,21 @@ struct HomeView: View {
             if let item = library.items.first(where: { $0.id == id }) { library.select(item) }
         }
         .dropDestination(for: URL.self) { urls, _ in
+            // A dropped web address opens the sheet with it filled in, so it can be checked before it is fetched.
+            if let web = urls.first(where: { !$0.isFileURL && WebAddress.parse($0.absoluteString) != nil }) {
+                addWebPage(prefilledWith: web.absoluteString)
+                return true
+            }
             let accepted = urls.filter { ["pdf", "html", "htm"].contains($0.pathExtension.lowercased()) || $0.hasDirectoryPath }
             guard !accepted.isEmpty else { return false }
             Task { await library.addDocuments(accepted) }
             return true
         }
+    }
+
+    private func addWebPage(prefilledWith address: String = "") {
+        droppedAddress = address
+        isAddingWebPage = true
     }
 
     private func subtitle(of item: MacReaderKit.LibraryItem) -> String {

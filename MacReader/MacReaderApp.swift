@@ -6,17 +6,21 @@ struct MacReaderApp: App {
     @State private var library = LibraryViewModel()
     @State private var isChoosingLibrary = false
     @State private var isImporting = false
+    @State private var isAddingWebPage = false
     @AppStorage("readerColumnWidth") private var columnWidth = ReaderColumnWidth.narrow
     @FocusedValue(\.sentenceNavigation) private var sentenceNavigation
 
     var body: some Scene {
         WindowGroup {
-            HomeView(library: library, isChoosingLibrary: $isChoosingLibrary, isImporting: $isImporting)
+            HomeView(library: library, isChoosingLibrary: $isChoosingLibrary, isImporting: $isImporting, isAddingWebPage: $isAddingWebPage)
         }
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("Import…") { isImporting = true }
+                Button("Add File…") { isImporting = true }
                     .keyboardShortcut("o")
+                    .disabled(library.state == .noLibrary)
+                Button("Add Web Page from URL…") { isAddingWebPage = true }
+                    .keyboardShortcut("l")
                     .disabled(library.state == .noLibrary)
                 Button("Choose Library Folder…") { isChoosingLibrary = true }
                     .keyboardShortcut("o", modifiers: [.command, .shift])
