@@ -45,6 +45,13 @@ struct ContentArbiterTests {
         #expect(choice.source == .readability)
     }
 
+    @Test func aLongerCandidateThatLacksWhatReadabilityFoundDoesNotWin() throws {
+        let story = paragraph(Self.words(150, "story"))
+        let body = el("body", [:], el("article", [:], paragraph(Self.words(500, "sidebar"))))
+        let choice = try #require(ContentArbiter.choose(payload(readability: readability(story), body: body)))
+        #expect(choice.source == .readability)
+    }
+
     @Test func aTinyReadabilityResultYieldsToTheArticleElement() throws {
         let body = el("body", [:], el("main", [:], paragraph(Self.words(120)), paragraph(Self.words(120))))
         let choice = try #require(ContentArbiter.choose(payload(readability: readability(paragraph("Short.")), body: body)))

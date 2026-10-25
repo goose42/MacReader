@@ -49,6 +49,20 @@ struct BoilerplateFilterTests {
         #expect(!result.textContent.contains("Other story"))
     }
 
+    @Test func aTableCellCalledCommentDoesNotEndTheArticle() {
+        let table = el("table", [:], el("tr", [:], el("th", [:], el("p", [:], "Status")), el("th", [:], el("p", [:], "Comment"))),
+                       el("tr", [:], el("td", [:], el("p", [:], "new")), el("td", [:], el("p", [:], "Waiting for pickup"))))
+        let result = filter(p(1), p(2), p(3), p(4), table, p(5))
+        #expect(result.textContent.contains("Waiting for pickup"))
+        #expect(result.textContent.contains("Paragraph 5."))
+    }
+
+    @Test func aListItemOrQuoteReadingSubscribeDoesNotEndTheArticle() {
+        let list = el("ul", [:], el("li", [:], "Subscribe"), el("li", [:], "Newsletter"), el("li", [:], "Sign up for updates now please"))
+        let result = filter(p(1), p(2), p(3), p(4), list, p(5))
+        #expect(result.textContent.contains("Paragraph 5."))
+    }
+
     @Test func aTerminatingPhraseEarlyInTheTextIsLeftAlone() {
         let result = filter(el("h2", [:], "Comments"), p(1), p(2), p(3), p(4))
         #expect(result.children.count == 5)

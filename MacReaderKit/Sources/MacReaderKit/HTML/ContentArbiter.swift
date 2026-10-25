@@ -16,6 +16,7 @@ enum ContentArbiter {
     private static let minimumArticleCharacters = 250
     private static let minimumFallbackCharacters = 100
     private static let linkDensityTolerance = 0.1
+    private static let containmentThreshold = 0.8
 
     static func choose(_ payload: ExtractionPayload) -> ContentChoice? {
         let semantic = payload.body.flatMap(semanticCandidate)
@@ -36,8 +37,11 @@ enum ContentArbiter {
         if readability.textLength < minimumArticleCharacters {
             if let alternative = alternatives.first(where: { $0.content.textLength >= minimumArticleCharacters }) { best = alternative }
         } else {
+            // Only a fuller version of the same article replaces it: longer, no more full of links, and containing what
+            // Readability found, so a bigger block of sidebar text can't win on size alone.
             for alternative in alternatives where alternative.content.textLength > best.content.textLength * 2
-                && alternative.content.linkDensity <= readability.linkDensity + linkDensityTolerance {
+                && alternative.content.linkDensity <= readability.linkDensity + linkDensityTolerance
+                && coverage(of: readability, in: alternative.content) >= containmentThreshold {
                 best = alternative
             }
         }
@@ -54,6 +58,13 @@ enum ContentArbiter {
         let declaredWords = words(in: declared.textContent)
         let found = declaredWords.filter(chosenWords.contains).count
         return Double(found) / Double(max(declaredWords.count, 1)) < 0.7
+    }
+
+    /// The share of `reference`'s distinct words that also appear in `content`.
+    private static func coverage(of reference: HTMLNode, in content: HTMLNode) -> Double {
+        let referenceWords = Set(words(in: reference.textContent))
+        let contentWords = Set(words(in: content.textContent))
+        return Double(referenceWords.filter(contentWords.contains).count) / Double(max(referenceWords.count, 1))
     }
 
     private static func words(in text: String) -> [String] {

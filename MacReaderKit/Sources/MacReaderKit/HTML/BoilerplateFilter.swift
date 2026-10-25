@@ -10,6 +10,7 @@ enum BoilerplateFilter {
         "h1", "h2", "h3", "h4", "h5", "h6", "details", "mr-callout",
     ]
     private static let wrapperTags: Set<String> = ["div", "section", "article", "p", "ul", "ol", "li", "figure", "blockquote", "header", "span"]
+    private static let isolatingTags: Set<String> = ["table", "pre", "blockquote", "ul", "ol", "figure", "details", "mr-callout"]
     private static let mediaTags: Set<String> = ["img", "picture", "svg", "video", "table", "pre", "math"]
 
     nonisolated(unsafe) private static let terminating = /(?i)\s*(?:related\s+(?:articles?|posts?|stories|reading|links|content|topics)|you\s+(?:may|might|could)\s+also\s+(?:like|enjoy)|you\s+may\s+like|more\s+(?:from|stories|articles|on|in)\b.*|read\s+(?:next|more|also)|also\s+read|recommended(?:\s+for\s+you|\s+reading)?|share\s+(?:this|on|with)\b.*|leave\s+a\s+(?:comment|reply)|(?:\d+\s+)?(?:comments?|responses?|replies)|post\s+a\s+comment|about\s+the\s+author|subscribe(?:\s+to\b.*)?|sign\s+up\b.*|newsletter|advertisement|sponsored(?:\s+content)?|tags?|filed\s+under\b.*|trending(?:\s+now)?)\s*:?\s*/
@@ -19,7 +20,7 @@ enum BoilerplateFilter {
     static func filter(_ root: HTMLNode, byline: String?, publishedDate: Date?) -> HTMLNode {
         let state = State(total: root.textLength, byline: byline.map(simplified), dates: publishedDate.map(dateStrings) ?? [])
         var result = root
-        result.children = root.children.compactMap { prune($0, state) }
+        result.children = root.children.compactMap { prune($0, state, isolated: false) }
         return result
     }
 
@@ -39,7 +40,9 @@ enum BoilerplateFilter {
         }
     }
 
-    private static func prune(_ node: HTMLNode, _ state: State) -> HTMLNode? {
+    /// `isolated` is true inside tables, code, quotes, lists and figures, where a cell or item that reads "Comment" or
+    /// "Subscribe" is data, not the start of the page's trailing sections.
+    private static func prune(_ node: HTMLNode, _ state: State, isolated: Bool) -> HTMLNode? {
         if node.isText {
             state.consumed += node.textLength
             return node
@@ -54,7 +57,7 @@ enum BoilerplateFilter {
         }
 
         let leaf = isLeafBlock(node)
-        if leaf, length <= 60, node.textContent.wholeMatch(of: terminating) != nil, Double(state.consumed) >= tailStart * Double(state.total) {
+        if leaf, !isolated, length <= 60, node.textContent.wholeMatch(of: terminating) != nil, Double(state.consumed) >= tailStart * Double(state.total) {
             state.stopped = true
             return nil
         }
@@ -69,7 +72,8 @@ enum BoilerplateFilter {
         }
 
         var copy = node
-        copy.children = node.children.compactMap { prune($0, state) }
+        let childIsolated = isolated || isolatingTags.contains(node.tag)
+        copy.children = node.children.compactMap { prune($0, state, isolated: childIsolated) }
         if wrapperTags.contains(node.tag), copy.textLength == 0, copy.first(where: { mediaTags.contains($0.tag) }) == nil { return nil }
         return copy
     }
