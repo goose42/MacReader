@@ -14,8 +14,9 @@ enum WebPageExtractor {
         [{"trigger": {"url-filter": "^https?://.*"}, "action": {"type": "block"}}]
         """
 
-    static func extract(html: String, baseURL: URL) async throws -> ExtractionPayload {
-        let script = try bundledScript()
+    /// `cosmeticFilters` is the JSON of element-hiding rules to apply; by default the bundled filter lists.
+    static func extract(html: String, baseURL: URL, cosmeticFilters: String? = nil) async throws -> ExtractionPayload {
+        let script = try bundledScript(cosmeticFilters: cosmeticFilters ?? bundledFilters())
 
         var configuration = WebPage.Configuration()
         configuration.defaultNavigationPreferences.allowsContentJavaScript = false
@@ -34,13 +35,24 @@ enum WebPageExtractor {
         return payload
     }
 
-    /// The scripts joined into one function body ending in a call that returns the report as JSON.
-    private static func bundledScript() throws -> String {
+    private static let noFilters = #"{"classes":[],"ids":[],"complex":{}}"#
+
+    private static func resource(_ name: String, _ fileExtension: String) -> URL? {
+        Bundle.module.url(forResource: name, withExtension: fileExtension, subdirectory: "Resources/HTML")
+            ?? Bundle.module.url(forResource: name, withExtension: fileExtension, subdirectory: "HTML")
+    }
+
+    private static func bundledFilters() -> String {
+        resource("cosmetic-filters", "json").flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? noFilters
+    }
+
+    /// The scripts joined into one function body ending in a call that returns the report as JSON, preceded by the
+    /// element-hiding rules as a constant the junk filter reads.
+    private static func bundledScript(cosmeticFilters: String) throws -> String {
         let sources = try scriptNames.map { name in
-            guard let url = Bundle.module.url(forResource: name, withExtension: "js", subdirectory: "Resources/HTML")
-                ?? Bundle.module.url(forResource: name, withExtension: "js", subdirectory: "HTML") else { throw Failure.scriptsMissing }
+            guard let url = resource(name, "js") else { throw Failure.scriptsMissing }
             return try String(contentsOf: url, encoding: .utf8)
         }
-        return sources.joined(separator: "\n") + "\nreturn mrExtract();"
+        return "const MR_COSMETIC = \(cosmeticFilters);\n" + sources.joined(separator: "\n") + "\nreturn mrExtract();"
     }
 }

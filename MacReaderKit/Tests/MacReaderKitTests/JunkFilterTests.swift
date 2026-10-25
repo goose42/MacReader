@@ -9,18 +9,18 @@ struct JunkFilterTests {
     private static let filler = String(repeating: "The quick brown fox jumps over the lazy dog, again and again. ", count: 8)
     private static let junkText = "JUNKMARKER lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore."
 
-    private func extractedText(_ inside: String, head: String = "", outside: String = "") async throws -> String {
+    private func extractedText(_ inside: String, head: String = "", outside: String = "", filters: String? = nil) async throws -> String {
         let html = """
             <!DOCTYPE html><html><head><title>T</title>\(head)</head><body>
             <div id="wrap"><article><p>\(Self.filler)</p>\(inside)<p>\(Self.filler)</p><p>\(Self.filler)</p></article></div>\(outside)
             </body></html>
             """
-        let payload = try await WebPageExtractor.extract(html: html, baseURL: URL(string: "file:///tmp/p.html")!)
+        let payload = try await WebPageExtractor.extract(html: html, baseURL: URL(string: "file:///tmp/p.html")!, cosmeticFilters: filters)
         return try #require(payload.readability).content.textContent
     }
 
-    private func expectJunkRemoved(_ inside: String, head: String = "", outside: String = "", sourceLocation: SourceLocation = #_sourceLocation) async throws {
-        let text = try await extractedText(inside, head: head, outside: outside)
+    private func expectJunkRemoved(_ inside: String, head: String = "", outside: String = "", filters: String? = nil, sourceLocation: SourceLocation = #_sourceLocation) async throws {
+        let text = try await extractedText(inside, head: head, outside: outside, filters: filters)
         #expect(text.contains("quick brown fox"), sourceLocation: sourceLocation)
         #expect(!text.contains("JUNKMARKER"), sourceLocation: sourceLocation)
     }
@@ -120,5 +120,42 @@ struct JunkFilterTests {
         let node = try #require(snippet(content))
         #expect(node.textContent.contains("let y = 2"))
         #expect(node.attributes["data-mr-mono"] == "1")
+    }
+
+    // MARK: - Filter lists
+
+    @Test func hidesElementsByClassFromAFilterList() async throws {
+        try await expectJunkRemoved("<div class=\"zzz-annoy other\"><p>\(Self.junkText)</p></div>", filters: #"{"classes":["zzz-annoy"],"ids":[],"complex":{}}"#)
+    }
+
+    @Test func hidesElementsByIDFromAFilterList() async throws {
+        try await expectJunkRemoved("<div id=\"zzz-box\"><p>\(Self.junkText)</p></div>", filters: #"{"classes":[],"ids":["zzz-box"],"complex":{}}"#)
+    }
+
+    @Test func appliesCompoundRulesOnlyToWhatTheyMatch() async throws {
+        let filters = #"{"classes":[],"ids":[],"complex":{".zzz-box":["div.zzz-box > p.inner"]}}"#
+        let text = try await extractedText("<div class=\"zzz-box\"><p class=\"inner\">\(Self.junkText)</p><p>KEPTMARKER stays in the box because only the inner paragraph matches the rule.</p></div>", filters: filters)
+        #expect(!text.contains("JUNKMARKER"))
+        #expect(text.contains("KEPTMARKER"))
+    }
+
+    @Test func aBrokenSelectorDoesNotStopTheOthers() async throws {
+        let filters = #"{"classes":[],"ids":[],"complex":{".zzz-a":["div[["],".zzz-b":[".zzz-b p"]}}"#
+        try await expectJunkRemoved("<div class=\"zzz-a zzz-b\"><p>\(Self.junkText)</p></div>", filters: filters)
+    }
+
+    @Test func aFilterListNeverRemovesWhatHoldsTheArticle() async throws {
+        let html = """
+            <!DOCTYPE html><html><head><title>T</title></head><body><div class="zzz-annoy"><article><p>\(Self.filler)</p><p>\(Self.filler)</p><p>\(Self.filler)</p></article></div>
+            <p>\(Self.filler)</p><p>\(Self.filler)</p><p>\(Self.filler)</p><p>\(Self.filler)</p><p>\(Self.filler)</p></body></html>
+            """
+        let payload = try await WebPageExtractor.extract(html: html, baseURL: URL(string: "file:///tmp/p.html")!, cosmeticFilters: #"{"classes":["zzz-annoy"],"ids":[],"complex":{}}"#)
+        #expect(payload.body?.textContent.contains("quick brown fox") == true)
+        #expect(payload.body?.first { $0.tag == "article" } != nil)
+    }
+
+    @Test func theBundledListsAreLoadedByDefault() async throws {
+        // "alert-cnil" is a cookie notice from Fanboy's lists that none of the built-in rules know.
+        try await expectJunkRemoved("<div class=\"alert-cnil\"><p>\(Self.junkText)</p></div>")
     }
 }

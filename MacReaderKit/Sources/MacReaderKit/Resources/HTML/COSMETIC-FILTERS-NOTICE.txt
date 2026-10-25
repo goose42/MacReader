@@ -1,0 +1,4 @@
+cosmetic-filters.json is derived from:
+  Fanboy's Annoyance List      https://secure.fanboy.co.nz/fanboy-annoyance.txt     (CC BY 3.0)
+  Fanboy's Cookie Monster List https://secure.fanboy.co.nz/fanboy-cookiemonster.txt (CC BY 3.0)
+Only generic element-hiding rules were kept. Downloaded 2026-10-25. Regenerate with Scripts/generate-cosmetic-filters.sh.

@@ -53,6 +53,43 @@ function mrKeepArticleAsides(doc) {
     }
 }
 
+/** Elements the bundled ad-blocker filter lists hide. A rule applies only if the page has the class or id it is keyed
+ *  by, so the tens of thousands of rules cost one pass over the page's names. */
+function mrCosmeticJunk(doc) {
+    const classes = new Set(MR_COSMETIC.classes);
+    const ids = new Set(MR_COSMETIC.ids);
+    const found = new Set();
+    const tokens = new Set();
+    for (const element of doc.body.querySelectorAll("*")) {
+        if (typeof element.className === "string") {
+            for (const name of element.classList) {
+                if (classes.has(name)) found.add(element);
+                tokens.add("." + name);
+            }
+        }
+        if (element.id) {
+            if (ids.has(element.id)) found.add(element);
+            tokens.add("#" + element.id);
+        }
+    }
+    for (const token of tokens) {
+        if (!Object.prototype.hasOwnProperty.call(MR_COSMETIC.complex, token)) continue;
+        for (const selector of MR_COSMETIC.complex[token]) {
+            try {
+                for (const element of doc.body.querySelectorAll(selector)) found.add(element);
+            } catch (error) {
+                // A selector this engine can't parse is skipped, not fatal.
+            }
+        }
+    }
+    return Array.from(found).filter((element) => !mrHoldsArticleElement(element));
+}
+
+function mrHoldsArticleElement(element) {
+    const selector = "article, main, [itemprop~=articleBody]";
+    return element.matches(selector) || element.querySelector(selector) !== null;
+}
+
 function mrRemoveJunk(doc) {
     const paragraphLength = (root) => Array.from(root.querySelectorAll("p"), (p) => p.textContent.length).reduce((a, b) => a + b, 0);
     const paragraphTotal = paragraphLength(doc.body);
@@ -65,6 +102,7 @@ function mrRemoveJunk(doc) {
         if (MR_NEVER_TESTED.has(element.tagName.toLowerCase())) continue;
         if (mrIsJunk(element, doc.defaultView.getComputedStyle(element))) junk.push(element);
     }
+    junk.push(...mrCosmeticJunk(doc));
     // Something broad enough to hold the article is mislabelled, not junk.
     for (const element of junk) {
         if (element.isConnected && share(element) <= 0.3) element.remove();

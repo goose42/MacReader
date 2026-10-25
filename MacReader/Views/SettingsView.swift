@@ -24,10 +24,28 @@ struct SettingsView: View {
                     .font(.system(.body, design: .serif))
                     .accessibilityLabel("Highlight preview")
             }
+            Section("Acknowledgements") {
+                acknowledgement(
+                    "Mozilla Readability", detail: "Finds the article in saved web pages. Apache License 2.0.",
+                    url: "https://github.com/mozilla/readability")
+                acknowledgement(
+                    "Fanboy’s Annoyance and Cookie Monster lists", detail: "Hide popups, banners and cookie notices on saved web pages. CC BY 3.0.",
+                    url: "https://easylist.to/pages/licence.html")
+            }
         }
         .formStyle(.grouped)
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func acknowledgement(_ name: String, detail: String, url: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if let destination = URL(string: url) { Link(name, destination: destination) } else { Text(name) }
+            Text(detail)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private func colorRow(_ title: String, choice: Binding<ColorChoice>, automatic: Color, resetTitle: String) -> some View {
